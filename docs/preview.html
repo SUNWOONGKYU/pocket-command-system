@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>POCKET COMMANDER — Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{--ink:#0e1318;--ink-2:#0b1015;--panel:#161e29;--panel-2:#1b2533;--line:#283543;--line-soft:#1f2a37;--text:#cad6e2;--text-dim:#7c8a9a;--text-faint:#54637380;--brand:#ff7a1a;--s-working:#3ba7f0;--s-idle:#647588;--s-stuck:#f5a524;--s-offline:#e0556a;--radius:10px;--mono:'IBM Plex Mono',monospace;--disp:'Chakra Petch',sans-serif;--body:'Inter',sans-serif}
+*{box-sizing:border-box}html,body{margin:0;background:var(--ink);color:var(--text);font-family:var(--body);-webkit-font-smoothing:antialiased}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);background-size:56px 56px;opacity:.22;mask-image:radial-gradient(ellipse 120% 90% at 50% 0%,#000 35%,transparent 90%)}
+.shell{position:relative;min-height:100vh;display:grid;grid-template-columns:240px 1fr 320px;grid-template-rows:auto 1fr;grid-template-areas:'bar bar bar' 'side main feed';gap:1px;background:var(--line-soft)}
+.bar{grid-area:bar;background:linear-gradient(180deg,var(--panel-2),var(--panel));border-bottom:1px solid var(--line);display:flex;align-items:center;gap:22px;padding:14px 22px}
+.wordmark{font-family:var(--disp);font-weight:700;letter-spacing:.04em;font-size:18px;line-height:1}.wordmark .accent{color:var(--brand)}
+.wordmark .sub{display:block;font-family:var(--mono);font-weight:500;font-size:10px;letter-spacing:.34em;color:var(--text-dim);margin-top:4px}
+.bar-spacer{flex:1}.clock{font-family:var(--mono);font-size:13px;color:var(--text-dim);letter-spacing:.06em}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--s-working);animation:ping 2s infinite;display:inline-block;margin-right:7px}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(59,167,240,.6)}70%{box-shadow:0 0 0 7px rgba(59,167,240,0)}100%{box-shadow:0 0 0 0 rgba(59,167,240,0)}}
+.tallies{display:flex;gap:10px}.tally{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:999px;padding:5px 11px;display:flex;align-items:center;gap:7px;background:var(--ink-2)}.tally b{font-size:13px}.tally .pip{width:8px;height:8px;border-radius:2px}
+.demo-flag{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--s-stuck);border:1px solid var(--s-stuck);border-radius:4px;padding:3px 7px}
+.side{grid-area:side;background:var(--panel);padding:20px 18px;display:flex;flex-direction:column;gap:18px}
+.eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.3em;color:var(--text-dim);text-transform:uppercase}
+.bigstat{font-family:var(--disp);font-weight:700;line-height:1}.bigstat .num{font-size:52px}.bigstat .unit{font-size:15px;color:var(--text-dim);margin-left:6px}
+.barmeter{height:10px;border-radius:6px;background:var(--ink-2);overflow:hidden;display:flex}.barmeter span{display:block;height:100%}
+.legend{display:flex;flex-direction:column;gap:9px}.legend .row{display:flex;align-items:center;justify-content:space-between;font-family:var(--mono);font-size:12px;color:var(--text-dim)}
+.legend .row .name{display:flex;align-items:center;gap:8px;color:var(--text)}.legend .row .pip{width:9px;height:9px;border-radius:2px}
+.main{grid-area:main;background:var(--ink);padding:20px;overflow:auto}
+.grid-head{display:flex;align-items:baseline;gap:12px;margin-bottom:16px}.grid-head h2{font-family:var(--disp);font-weight:600;font-size:15px;letter-spacing:.14em;margin:0;text-transform:uppercase}.grid-head .count{font-family:var(--mono);font-size:12px;color:var(--text-dim)}
+.agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:12px}
+.tile{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:13px 13px 11px;overflow:hidden;transition:border-color .25s,transform .12s}.tile:hover{transform:translateY(-2px)}
+.tile .corner{position:absolute;top:0;left:0;width:3px;height:100%}
+.tile .top{display:flex;align-items:center;justify-content:space-between}.tile .name{font-family:var(--disp);font-weight:600;font-size:15px}.tile .squad{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--text-dim)}
+.tile .role{font-size:11px;color:var(--text-dim);margin:4px 0 10px;height:28px;line-height:1.3;overflow:hidden}
+.tile .status-line{display:flex;align-items:center;justify-content:space-between;font-family:var(--mono);font-size:11px}.tile .stat-label{display:flex;align-items:center;gap:6px}.tile .stat-dot{width:7px;height:7px;border-radius:50%}.tile .beats{color:var(--text-faint);font-size:10px}
+.ekg{height:26px;margin-top:9px}.ekg svg{width:100%;height:100%;display:block}.ekg path{fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ekg .trace{stroke-dasharray:320;stroke-dashoffset:320;animation:sweep 1.6s linear infinite}@keyframes sweep{to{stroke-dashoffset:0}}
+.tile[data-state='offline'] .ekg .trace{animation:none;stroke-dashoffset:0;opacity:.5}.tile[data-state='idle'] .ekg .trace{animation-duration:3.2s;opacity:.7}.tile[data-state='stuck'] .ekg .trace{animation-duration:2.6s}
+.feed{grid-area:feed;background:var(--panel);padding:18px 16px;overflow:auto}.feed h2{font-family:var(--disp);font-weight:600;font-size:13px;letter-spacing:.16em;text-transform:uppercase;margin:0 0 14px}
+.event{border-left:2px solid var(--line);padding:8px 0 10px 12px;margin-left:3px;position:relative}.event::before{content:'';position:absolute;left:-5px;top:12px;width:8px;height:8px;border-radius:50%;background:var(--line)}
+.event .ts{font-family:var(--mono);font-size:10px;color:var(--text-dim)}.event .msg{font-size:12px;margin-top:3px;line-height:1.45}.event .who{color:var(--brand);font-weight:600}
+@media(max-width:1100px){.shell{grid-template-columns:1fr;grid-template-areas:'bar' 'side' 'main' 'feed'}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="bar">
+    <div class="wordmark">POCKET <span class="accent">COMMANDER</span><span class="sub">AI 에이전트 지휘 · by 2GOSOO AI LAB</span></div>
+    <div class="bar-spacer"></div>
+    <span class="demo-flag">DEMO MODE</span>
+    <div class="tallies" id="tallies"></div>
+    <div class="clock"><span class="live-dot"></span><span id="clock"></span></div>
+  </header>
+  <aside class="side">
+    <div><div class="eyebrow">가동률 · OPS RATE</div><div class="bigstat" style="margin-top:8px"><span class="num" id="rate">0</span><span class="unit">%</span></div></div>
+    <div class="barmeter" id="barmeter"></div>
+    <div class="legend" id="legend"></div>
+  </aside>
+  <main class="main">
+    <div class="grid-head"><h2>Agent Roster</h2><span class="count">16 units · 하트비트 실시간</span></div>
+    <div class="agent-grid" id="grid"></div>
+  </main>
+  <section class="feed"><h2>▦ Live Feed</h2><div id="feed"></div></section>
+</div>
+<script>
+const META={working:{label:'작업 중',color:'#3ba7f0',glow:'rgba(59,167,240,.45)'},idle:{label:'대기',color:'#647588',glow:'rgba(100,117,136,.25)'},stuck:{label:'정체',color:'#f5a524',glow:'rgba(245,165,36,.45)'},offline:{label:'응답 없음',color:'#e0556a',glow:'rgba(224,85,106,.5)'}};
+const EKG='M0 13 L34 13 L40 13 L44 4 L49 22 L54 13 L72 13 L78 13 L82 9 L86 13 L120 13 L154 13 L160 13 L164 4 L169 22 L174 13 L192 13 L198 13 L202 9 L206 13 L240 13';
+const FLAT='M0 13 L240 13';
+const SEED=[['허실장','오케스트레이터 · 총괄 지휘','지휘부'],['알파조','데이터/유튜브 분석 리포트','1소대'],['정화백','문서 정리 · 요약 · 교정','1소대'],['소통꾼','메시지 작성 · 외부 소통','1소대'],['브라보조','웹 리서치 · 자료 수집','1소대'],['찰리조','코드 작성 · 디버깅','2소대'],['델타조','이미지/SVG 렌더링','2소대'],['에코조','번역 · 다국어 처리','2소대'],['폭스트롯','일정 · 캘린더 관리','2소대'],['골프조','재무 계산 · 표 작성','3소대'],['호텔조','QA · 결과 검수','3소대'],['인디아조','크롤링 · 모니터링','3소대'],['줄리엣','요약 브리핑 작성','3소대'],['킬로조','아카이브 · 기록 관리','4소대'],['리마조','알림 · 스케줄 트리거','4소대'],['마이크조','예비 · 백업 처리','4소대']];
+const CMDS=['알파조, 이번 주 유튜브 분석 리포트 뽑아줘','정화백, 회의록 3개 요약해줘','찰리조, 로그인 버그 잡아줘','델타조, BuzzLab 슬라이드 SVG 렌더','소통꾼, 수강생 공지 메일 초안','골프조, 1분기 손익표 정리'];
+let agents=SEED.map((s,i)=>({name:s[0],role:s[1],squad:s[2],beats:(Math.random()*400|0),status:i%5===1?'working':'idle',last:Date.now(),updated:Date.now()}));
+let offline='마이크조'; agents[15].last=Date.now()-60000;
+function derive(a){const since=(Date.now()-a.last)/1000;if(since>30)return'offline';if(a.status==='working'){if((Date.now()-a.updated)/1000>180)return'stuck';return'working'}return'idle'}
+function render(){
+  const grid=document.getElementById('grid');grid.innerHTML='';
+  const c={working:0,idle:0,stuck:0,offline:0};
+  agents.forEach(a=>{const st=derive(a);c[st]++;const m=META[st];
+    grid.insertAdjacentHTML('beforeend',`<div class="tile" data-state="${st}" style="border-color:${st==='idle'?'var(--line)':m.color+'55'}"><span class="corner" style="background:${m.color}"></span><div class="top"><span class="name">${a.name}</span><span class="squad">${a.squad}</span></div><div class="role">${a.role}</div><div class="status-line"><span class="stat-label"><span class="stat-dot" style="background:${m.color};box-shadow:0 0 8px ${m.glow}"></span><span style="color:${m.color}">${m.label}</span></span><span class="beats">♥ ${a.beats.toLocaleString()}</span></div><div class="ekg"><svg viewBox="0 0 240 26" preserveAspectRatio="none"><path class="trace" d="${st==='offline'?FLAT:EKG}" stroke="${m.color}" style="filter:drop-shadow(0 0 3px ${m.glow})"/></svg></div></div>`)});
+  const total=agents.length;
+  document.getElementById('rate').textContent=Math.round(c.working/total*100);
+  document.getElementById('tallies').innerHTML=['working','idle','stuck','offline'].map(s=>`<span class="tally"><span class="pip" style="background:${META[s].color}"></span>${META[s].label} <b>${c[s]}</b></span>`).join('');
+  document.getElementById('barmeter').innerHTML=['working','idle','stuck','offline'].filter(s=>c[s]).map(s=>`<span style="background:${META[s].color};width:${c[s]/total*100}%"></span>`).join('');
+  document.getElementById('legend').innerHTML=['working','idle','stuck','offline'].map(s=>`<div class="row"><span class="name"><span class="pip" style="background:${META[s].color}"></span>${META[s].label}</span><span>${c[s]}</span></div>`).join('')+`<div class="row" style="border-top:1px solid var(--line);padding-top:9px;margin-top:2px"><span class="name">총 인원</span><span>${total}</span></div>`;
+}
+function clock(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('ko-KR',{hour12:false})}
+setInterval(()=>{agents.forEach(a=>{if(a.name===offline)return;a.beats++;a.last=Date.now();if(a.status==='idle'&&Math.random()<.05){a.status='working';a.updated=Date.now()}else if(a.status==='working'&&Math.random()<.18){a.status='idle';a.updated=Date.now()}});if(Math.random()<.05){const r=agents.find(a=>a.name===offline);if(r)r.last=Date.now();const v=agents[1+(Math.random()*(agents.length-1)|0)];offline=v.name;v.last=Date.now()-60000}render()},1500);
+const feed=document.getElementById('feed');
+setInterval(()=>{const cmd=CMDS[Math.random()*CMDS.length|0];const who=cmd.split(',')[0];const st=Math.random()<.5?'작업 착수':'완료';feed.insertAdjacentHTML('afterbegin',`<div class="event"><div class="ts">${new Date().toLocaleTimeString('ko-KR',{hour12:false})}</div><div class="msg"><span class="who">${who}</span> · ${st}<br><span style="color:var(--text-dim)">"${cmd}"</span></div></div>`);while(feed.children.length>20)feed.lastChild.remove()},3500);
+setInterval(clock,1000);clock();render();
+</script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="660" viewBox="0 0 980 660" font-family="'Noto Sans KR','Malgun Gothic',sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+    </marker>
+    <style>
+      .box{rx:10;stroke-width:1.5;}
+      .t{fill:#0f172a;font-size:15px;font-weight:700;}
+      .s{fill:#475569;font-size:11.5px;}
+      .lbl{fill:#64748b;font-size:11px;font-style:italic;}
+      .hdr{fill:#fff;font-size:14px;font-weight:800;}
+    </style>
+  </defs>
+
+  <rect width="980" height="660" fill="#f7f9fc"/>
+  <text x="40" y="42" fill="#0f172a" font-size="24" font-weight="800">Pocket Command System — 관계도</text>
+  <text x="40" y="66" class="s">주머니 속 지휘소: 폰 한 줄 명령이 여러 PC의 AI 부대로 흐르는 구조</text>
+
+  <!-- 지휘관 -->
+  <rect x="40" y="100" width="230" height="86" rx="10" fill="#0f172a"/>
+  <text x="60" y="130" class="hdr">👤 지휘관 (PO)</text>
+  <text x="60" y="154" fill="#cbd5e1" font-size="11.5">최종 명령권자 · 폰으로 지휘</text>
+  <text x="60" y="172" fill="#94a3b8" font-size="11">📱 외출 중에도 한 줄 명령</text>
+
+  <!-- 텔레그램 -->
+  <rect x="375" y="100" width="230" height="86" rx="10" fill="#fff" stroke="#00a3c4" class="box"/>
+  <text x="395" y="130" class="t">✈ 텔레그램</text>
+  <text x="395" y="154" class="s">입출력 채널 (명령 수신 / 결과 보고)</text>
+  <text x="395" y="172" class="lbl">폰·PC 어디서나</text>
+
+  <!-- 참모장 -->
+  <rect x="710" y="100" width="230" height="86" rx="10" fill="#fff" stroke="#00b36e" class="box"/>
+  <text x="730" y="130" class="t">☁ 참모장 (오케스트레이터)</text>
+  <text x="730" y="154" class="s">지휘관 대신 임무 배정·조율</text>
+  <text x="730" y="172" class="lbl">클라우드 상주 · 자동 라우팅</text>
+
+  <!-- Supabase -->
+  <rect x="300" y="250" width="380" height="92" rx="10" fill="#0d9488" stroke="#0f766e" class="box"/>
+  <text x="320" y="280" class="hdr">🗄 Supabase (중앙 데이터)</text>
+  <text x="320" y="304" fill="#e0f2f1" font-size="12">tasks 큐 (작업) · agents (워커 명단·상태·하트비트)</text>
+  <text x="320" y="324" fill="#b2dfdb" font-size="11">Realtime 구독으로 실시간 동기화</text>
+
+  <!-- 대시보드 -->
+  <rect x="710" y="250" width="230" height="92" rx="10" fill="#fff" stroke="#7c3aed" class="box"/>
+  <text x="730" y="280" class="t">🖥 Pocket Command Post</text>
+  <text x="730" y="304" class="s">실시간 관제 대시보드</text>
+  <text x="730" y="324" class="lbl">하트비트 EKG · 워커 생존 한눈에</text>
+
+  <!-- 중대 3 -->
+  <text x="40" y="400" fill="#0f172a" font-size="14" font-weight="800">중대 = PC 한 대 (여러 소대 호스팅)</text>
+  <g>
+    <!-- 중대1 -->
+    <rect x="40" y="418" width="285" height="200" rx="10" fill="#eef2ff" stroke="#6366f1" class="box"/>
+    <text x="58" y="446" class="t">🖧 1중대 (PC)</text>
+    <rect x="58" y="458" width="248" height="58" rx="8" fill="#fff" stroke="#6366f1"/>
+    <text x="72" y="482" fill="#0f172a" font-size="13" font-weight="700">🪖 소대 (워커)</text>
+    <text x="72" y="502" class="s">claude CLI(구독) 인스턴스 = 소대장</text>
+    <rect x="58" y="524" width="248" height="52" rx="8" fill="#fff7ed" stroke="#f59e0b"/>
+    <text x="72" y="546" fill="#0f172a" font-size="12.5" font-weight="700">🔍 감사관 (자동 전용)</text>
+    <text x="72" y="564" class="s">커밋 시 자동 감사 → 워커 대응</text>
+    <text x="58" y="600" class="lbl">필요 시 분대(Teammate) 즉석 소환</text>
+  </g>
+  <g>
+    <rect x="347" y="418" width="285" height="200" rx="10" fill="#eef2ff" stroke="#6366f1" class="box"/>
+    <text x="365" y="446" class="t">🖧 2중대 (PC)</text>
+    <rect x="365" y="458" width="248" height="58" rx="8" fill="#fff" stroke="#6366f1"/>
+    <text x="379" y="482" fill="#0f172a" font-size="13" font-weight="700">🪖 소대 (워커)</text>
+    <text x="379" y="502" class="s">claude CLI(구독) 인스턴스</text>
+    <rect x="365" y="524" width="248" height="52" rx="8" fill="#fff7ed" stroke="#f59e0b"/>
+    <text x="379" y="546" fill="#0f172a" font-size="12.5" font-weight="700">🔍 감사관</text>
+    <text x="379" y="564" class="s">프로젝트별 감사 기준 적용</text>
+    <text x="365" y="600" class="lbl">백호 발동 시 44명+ 부대로 폭발</text>
+  </g>
+  <g>
+    <rect x="655" y="418" width="285" height="200" rx="10" fill="#eef2ff" stroke="#6366f1" class="box"/>
+    <text x="673" y="446" class="t">🖧 3중대 (PC)</text>
+    <rect x="673" y="458" width="248" height="58" rx="8" fill="#fff" stroke="#6366f1"/>
+    <text x="687" y="482" fill="#0f172a" font-size="13" font-weight="700">🪖 소대 N (워커 다수)</text>
+    <text x="687" y="502" class="s">한 PC에 여러 워커 동시 호스팅</text>
+    <rect x="673" y="524" width="248" height="52" rx="8" fill="#fff7ed" stroke="#f59e0b"/>
+    <text x="687" y="546" fill="#0f172a" font-size="12.5" font-weight="700">🔍 감사관</text>
+    <text x="687" y="564" class="s">워커마다 1:1 견제</text>
+    <text x="673" y="600" class="lbl">DW 특수부대 추가 시 최대 1,000</text>
+  </g>
+
+  <!-- 연결선 -->
+  <line x1="270" y1="143" x2="373" y2="143" stroke="#475569" stroke-width="1.6" marker-end="url(#arr)"/>
+  <line x1="373" y1="160" x2="270" y2="160" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arr)"/>
+  <line x1="605" y1="143" x2="708" y2="143" stroke="#475569" stroke-width="1.6" marker-end="url(#arr)"/>
+  <line x1="825" y1="186" x2="640" y2="250" stroke="#475569" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="690" y="225" class="lbl">작업 적재</text>
+  <line x1="680" y1="296" x2="708" y2="296" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text x="612" y="240" class="lbl">realtime</text>
+  <!-- 중대 ↔ supabase -->
+  <line x1="180" y1="418" x2="430" y2="344" stroke="#475569" stroke-width="1.4" marker-end="url(#arr)"/>
+  <line x1="490" y1="418" x2="490" y2="344" stroke="#475569" stroke-width="1.4" marker-end="url(#arr)"/>
+  <line x1="797" y1="418" x2="560" y2="344" stroke="#475569" stroke-width="1.4" marker-end="url(#arr)"/>
+  <text x="200" y="392" class="lbl">픽업·하트비트 (양방향)</text>
+
+  <text x="40" y="645" class="s">핵심: 폰(텔레그램) → 참모장 배정 → Supabase 큐 → 각 중대 워커 실행 → 결과 보고 + 대시보드 실시간 반영. 감사관은 커밋 이벤트로 자동 작동.</text>
+</svg>
