@@ -16,7 +16,7 @@
 4. [어떻게 동작하나 — 작업 한 건의 여정](#4-어떻게-동작하나)
 5. [주요 기능](#5-주요-기능)
 6. [★ 특별 기능 — 백호 소대 편제 (대규모 AI 동시 투입)](#6--특별-기능--백호-소대-편제-대규모-ai-동시-투입)
-7. [비교 — Hermes Agent와의 관계 (공개 자료 기반 설계 비교)](#7-비교--hermes-agent와-pocket-command-system)
+7. [비교 — Hermes Agent와 Pocket Command System](#7-비교--hermes-agent와-pocket-command-system)
 8. [기술 구조](#8-기술-구조)
 9. [직접 만들기 — 재현 가이드](#9-직접-만들기--재현-가이드)
 10. [한계와 주의점](#10-한계와-주의점)
@@ -280,6 +280,8 @@ Claude Code 네이티브 재구현**입니다. 아래는 성능 벤치마크가 
 6. (선택) **감사관**: `install-auditor.ps1`로 프로젝트에 감사 파이프라인 장착.
 
 > ⚠️ claude는 **구독(OAuth) 인증**으로 호출합니다. API 키를 끼우지 않도록 환경변수를 정리합니다.
+
+소스: [github.com/SUNWOONGKYU/pocket-command-system](https://github.com/SUNWOONGKYU/pocket-command-system) (Apache-2.0)
 
 ---
 
