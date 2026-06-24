@@ -57,7 +57,7 @@
 
     <rect x="560" y="406" width="340" height="58" rx="9" fill="#fff7ed" stroke="#f59e0b" stroke-width="1.3"/>
     <text x="578" y="430" fill="#0f172a" font-weight="700">C. 🔍 감사관 감사 (읽기 전용)</text>
-    <text x="578" y="448" fill="#475569" font-size="11">5기준 검토 → 판정 → _audit/감사이력.md 기록</text>
+    <text x="578" y="448" fill="#475569" font-size="11">프로젝트별 기준 검토 → 판정 → _audit/감사이력.md 기록</text>
 
     <rect x="560" y="484" width="340" height="58" rx="9" fill="#fff" stroke="#16a34a" stroke-width="1.3"/>
     <text x="578" y="508" fill="#0f172a" font-weight="700">D. 워커 자동 대응</text>
