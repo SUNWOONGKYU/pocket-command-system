@@ -177,7 +177,7 @@
     <h3>★★ 특수부대 DW(Dynamic Workflows) — 추가 편성</h3>
     <p>기본 분대(A형 44명)는 그대로 두고, 그 위에 <strong>DW를 추가 편성</strong>하면 동원 규모가 다시 폭발한다(보병 옆의 포병).</p>
     <ul><li><strong>DW 엔진 1기 = 동시 16 병렬 / 누적 최대 1,000 에이전트.</strong> DW 부대는 N개까지 편성 가능.</li></ul>
-    <div class="callout warn">⚠️ <strong>단위 주의</strong> — 1,000은 <em>동시</em>가 아니라 DW 1기의 <em>누적 처리</em> 상한. 동시 투입은 DW당 16씩(+백호 분대 수십). "천 명이 한꺼번에"가 아니라 "누적 천 단위를 처리"로 읽어야 정직하다. DW는 Opus 4.8+ · Max/Team/Enterprise 플랜 한정, <strong>발동 전 PO 승인 필수.</strong></div>
+    <div class="callout warn">⚠️ <strong>단위 주의</strong> — 1,000은 <em>동시</em>가 아니라 DW 1기의 <em>누적 처리</em> 상한. 동시 투입은 DW당 16씩(+백호 분대 수십). "천 명이 한꺼번에"가 아니라 "누적 천 단위를 처리"로 읽는 게 정확하다. DW는 Opus 4.8+ · Max/Team/Enterprise 플랜 한정, <strong>발동 전 PO 승인 필수.</strong></div>
     <p>📜 백호 소대 편제는 <strong>특허출원</strong> — 출원번호 10-2026-0041235 (출원일 2026.03.07).</p>
     <div class="callout">요약 — 시스템이 "여러 워커의 <strong>수평 확장</strong>"이라면, 백호는 "워커 한 명의 <strong>수직 폭발</strong>". 둘을 합치면 폰 한 줄로 지휘하는 대규모 AI 군단.</div>
     <figure class="fig"><img src="diagrams/백호_관계도.svg" alt="백호 편제 관계도"><figcaption>📊 백호 편제 관계도</figcaption></figure>
@@ -188,7 +188,7 @@
   <section class="pane" id="t7">
     <h2>비교 — Hermes Agent와 Pocket Command System</h2>
     <p>Pocket Command System은 잘 알려진 에이전트 하네스 <strong>Hermes Agent</strong>(NousResearch)의 설계를 출발점 삼아 만든 <strong>Claude Code 네이티브 재구현</strong>이다. (성능 벤치마크 측정이 아니라 <strong>공개 자료 기반 설계 비교</strong>.)</p>
-    <div class="callout honest">⚖️ <strong>오해 정정</strong> — "멀티 워커·오케스트레이션·공유 작업보드·멀티호스트·텔레그램"은 <strong>헤르메스에 이미 다 있다.</strong> 우리만의 차별점이 아니라 헤르메스에서 가져온 <strong>공통 토대</strong>다.</div>
+    <div class="callout">"멀티 워커·오케스트레이션·공유 작업보드·멀티호스트·텔레그램"은 <strong>헤르메스에 이미 있는 공통 토대</strong>다 — 우리만의 차별점이 아니다.</div>
     <h3>공통 토대 (헤르메스가 원조, 우리도 채택)</h3>
     <ul>
       <li>멀티 워커 + 오케스트레이션(<code>role="orchestrator"</code> 자식이 워커 스폰)</li>
@@ -196,13 +196,13 @@
       <li>멀티호스트(6 백엔드: local·Docker·SSH·Daytona·Singularity·Modal)</li>
       <li>다채널 메신저·상시 가동·스킬·스케줄(cron)·DAG 작업 분해·전문 역할</li>
     </ul>
-    <h3>헤르메스가 더 성숙/우위인 축 (정직하게)</h3>
+    <h3>헤르메스가 더 성숙/우위인 축</h3>
     <ul>
       <li>영속 기억 + 자기 학습 루프(execute→evaluate→refine + 크로스세션 회상)</li>
       <li>다채널 20+(Discord·Slack·WhatsApp·Signal·Email) + 음성 메모 자동 전사</li>
       <li>경량·이식성($5 VPS 구동) + 보안(self-generated skills로 공급망 차단, CVE 0) + 오픈소스(MIT)</li>
     </ul>
-    <h3>Pocket Command System의 실제 차별점 (좁지만 분명)</h3>
+    <h3>Pocket Command System의 실제 차별점</h3>
     <ol>
       <li><strong>Claude Code 네이티브 대량 폭발</strong> — 백호(완편 44) + DW(최대 1,000)로 단일 명령을 군단급 전개. Claude 전용 메커니즘.</li>
       <li><strong>감사관 견제 거버넌스</strong> — 자기 학습이 아니라 독립된 감사관이 커밋을 자동 감사 → 워커 자동 대응.</li>
@@ -214,7 +214,7 @@
 
   <!-- 8 기술 구조 -->
   <section class="pane" id="t8">
-    <h2>기술 구조 <span style="font-size:14px;color:var(--faint)">(실무자용)</span></h2>
+    <h2>기술 구조</h2>
     <h3>스택</h3>
     <ul>
       <li><strong>대시보드</strong>: Next.js (App Router) + TypeScript, Vercel 배포</li>
@@ -269,8 +269,8 @@
 
   <!-- 10 한계 -->
   <section class="pane" id="t10">
-    <h2>한계와 주의점 <span style="font-size:14px;color:var(--faint)">(정직하게)</span></h2>
-    <p>좋은 점만 말하면 거짓이라, 커질 때 물리는 지점을 적는다.</p>
+    <h2>한계와 주의점</h2>
+    <p>규모가 커질수록 유의해야 할 지점들.</p>
     <ul>
       <li><strong>보안</strong> — 워커가 강한 권한으로 코드를 실행하고 명령 채널이 텔레그램이다. 봇/챗 접근이 곧 PC 제어가 될 수 있어, 규모가 커지면 <strong>발신자 인증</strong>이 필요해진다.</li>
       <li><strong>오류 전파</strong> — 무인 트리거가 엮이면 한 워커의 잘못된 출력이 다음 입력이 되어 누적될 수 있다. → 그래서 <strong>감사관(검증 워커)</strong>을 둔다.</li>
