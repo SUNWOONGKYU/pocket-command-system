@@ -14,11 +14,13 @@
   body{margin:0;background:var(--bg);color:var(--ink);
     font-family:'Noto Sans KR','Malgun Gothic',system-ui,sans-serif;line-height:1.65;}
   /* ── 헤더: 제목만 ── */
-  header.top{background:#0f172a;color:#fff;padding:22px 28px;}
-  header.top h1{margin:0;font-size:22px;font-weight:800;letter-spacing:.02em;}
-  /* ── 탭 바 ── */
-  nav.tabs{position:sticky;top:0;z-index:10;display:flex;gap:4px;overflow-x:auto;
-    background:var(--panel);border-bottom:1px solid var(--line);padding:8px 14px;
+  header.top{background:linear-gradient(135deg,#0d9488,#0f766e);color:#fff;padding:26px 28px;text-align:center;}
+  header.top h1{margin:0;font-size:24px;font-weight:800;letter-spacing:.02em;}
+  header.top .en{display:block;margin-top:6px;font-size:12px;font-weight:600;letter-spacing:.22em;color:#c7f0ea;text-transform:uppercase;}
+  /* ── 탭 바: 콘텐츠 폭 안에서 두 줄로 줄바꿈(가로 스크롤 X) ── */
+  nav.tabs{position:sticky;top:0;z-index:10;display:flex;flex-wrap:wrap;justify-content:center;gap:6px;
+    max-width:920px;margin:0 auto;
+    background:var(--panel);border-bottom:1px solid var(--line);padding:10px 14px;
     box-shadow:0 2px 8px rgba(0,0,0,.04);}
   nav.tabs button{flex:0 0 auto;border:1px solid transparent;background:transparent;
     color:var(--dim);font:inherit;font-size:13.5px;font-weight:600;padding:8px 14px;
@@ -59,7 +61,7 @@
 </style>
 </head>
 <body>
-<header class="top"><h1>Pocket Command System</h1></header>
+<header class="top"><h1>포켓 커맨드 시스템 소개</h1><span class="en">Pocket Command System</span></header>
 
 <nav class="tabs" id="tabs">
   <button class="active" data-t="t1">1 · 개요</button>
