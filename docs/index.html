@@ -75,7 +75,7 @@
   <button data-t="t8">7 · 기술 구조</button>
   <button data-t="t9">8 · 직접 만들기</button>
   <button data-t="t10">9 · 한계</button>
-  <button data-t="t7">10 · Hermes 비교</button>
+  <button data-t="t7">10 · Hermes Agent 비교</button>
   <button data-t="t11">11 · 용어집</button>
 </nav>
 
@@ -188,15 +188,15 @@
   <section class="pane" id="t7">
     <h2>비교 — Hermes Agent와 Pocket Command System</h2>
     <p>Pocket Command System은 잘 알려진 에이전트 하네스 <strong>Hermes Agent</strong>(NousResearch)의 설계를 출발점 삼아 만든 <strong>Claude Code 네이티브 재구현</strong>이다. (성능 벤치마크 측정이 아니라 <strong>공개 자료 기반 설계 비교</strong>.)</p>
-    <div class="callout">"멀티 워커·오케스트레이션·공유 작업보드·멀티호스트·텔레그램"은 <strong>헤르메스에 이미 있는 공통 토대</strong>다 — 우리만의 차별점이 아니다.</div>
-    <h3>공통 토대 (헤르메스가 원조, 우리도 채택)</h3>
+    <div class="callout">"멀티 워커·오케스트레이션·공유 작업보드·멀티호스트·텔레그램"은 <strong>헤르메스 에이전트에 이미 있는 공통 토대</strong>다 — 우리만의 차별점이 아니다.</div>
+    <h3>공통 토대 (헤르메스 에이전트가 원조, 우리도 채택)</h3>
     <ul>
       <li>멀티 워커 + 오케스트레이션(<code>role="orchestrator"</code> 자식이 워커 스폰)</li>
-      <li>공유 작업보드(헤르메스 Kanban: 작업=DB행, 워커=독립 OS 프로세스) — 우리 Supabase <code>tasks</code> 큐와 동형</li>
+      <li>공유 작업보드(헤르메스 에이전트 Kanban: 작업=DB행, 워커=독립 OS 프로세스) — 우리 Supabase <code>tasks</code> 큐와 동형</li>
       <li>멀티호스트(6 백엔드: local·Docker·SSH·Daytona·Singularity·Modal)</li>
       <li>다채널 메신저·상시 가동·스킬·스케줄(cron)·DAG 작업 분해·전문 역할</li>
     </ul>
-    <h3>헤르메스가 더 성숙/우위인 축</h3>
+    <h3>헤르메스 에이전트가 더 성숙/우위인 축</h3>
     <ul>
       <li>영속 기억 + 자기 학습 루프(execute→evaluate→refine + 크로스세션 회상)</li>
       <li>다채널 20+(Discord·Slack·WhatsApp·Signal·Email) + 음성 메모 자동 전사</li>
@@ -206,9 +206,9 @@
     <ol>
       <li><strong>Claude Code 네이티브 대량 폭발</strong> — 백호(완편 44) + DW(최대 1,000)로 단일 명령을 군단급 전개. Claude 전용 메커니즘.</li>
       <li><strong>감사관 견제 거버넌스</strong> — 자기 학습이 아니라 독립된 감사관이 커밋을 자동 감사 → 워커 자동 대응.</li>
-      <li><strong>군대 편제 UX + 부대 관제 대시보드</strong> — 일관된 지휘 메타포 + 하트비트 EKG. (헤르메스 Kanban이 작업 중심이라면 이쪽은 부대 생존·상태 중심.)</li>
+      <li><strong>군대 편제 UX + 부대 관제 대시보드</strong> — 일관된 지휘 메타포 + 하트비트 EKG. (헤르메스 에이전트 Kanban이 작업 중심이라면 이쪽은 부대 생존·상태 중심.)</li>
     </ol>
-    <div class="callout">한 줄 — 헤르메스는 "스스로 자라는 범용 에이전트 런타임", Pocket Command System은 "Claude Code 네이티브 + 군대식 거버넌스" 버전.</div>
+    <div class="callout">한 줄 — 헤르메스 에이전트는 "스스로 자라는 범용 에이전트 런타임", Pocket Command System은 "Claude Code 네이티브 + 군대식 거버넌스" 버전.</div>
     <p class="src">참고(공개 자료): NousResearch/hermes-agent 공식 docs(Subagent Delegation·Kanban·Profiles·Terminal backends) 및 Multi-Agent Architecture(issue #344). 위는 벤치마크 수치가 아니라 공개 문서 기반 설계 비교.</p>
   </section>
 
