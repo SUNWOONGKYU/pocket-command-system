@@ -194,27 +194,27 @@ Pocket Command System은 이 셋을 뒤집습니다.
 Pocket Command System은 잘 알려진 에이전트 하네스 **Hermes Agent**(NousResearch)의 설계를 **출발점 삼아 만든
 Claude Code 네이티브 재구현**입니다. 아래는 성능 벤치마크가 아니라 공개 자료 기반 설계 비교입니다.
 
-> "멀티 워커·오케스트레이션·공유 작업보드·멀티호스트·텔레그램"은 **헤르메스 에이전트에 이미 있는 공통 토대**입니다 — 우리만의 차별점이 아닙니다.
+> "멀티 워커·오케스트레이션·공유 작업보드·멀티호스트·텔레그램"은 **Hermes Agent에 이미 있는 공통 토대**입니다 — 우리만의 차별점이 아닙니다.
 
-### 공통 토대 (헤르메스 에이전트가 원조, 우리도 채택)
-- **멀티 워커 + 오케스트레이션** — 헤르메스 에이전트는 `role="orchestrator"` 자식이 워커를 스폰(트리 깊이 `max_spawn_depth`).
-- **공유 작업보드** — 헤르메스 에이전트 **Kanban**: 작업=DB 행, 워커=독립 OS 프로세스, 프로필 간 공유 (우리 Supabase `tasks` 큐와 동형).
-- **멀티호스트** — 헤르메스 에이전트 6개 백엔드(local·Docker·SSH·Daytona·Singularity·Modal).
+### 공통 토대 (Hermes Agent가 원조, 우리도 채택)
+- **멀티 워커 + 오케스트레이션** — Hermes Agent는 `role="orchestrator"` 자식이 워커를 스폰(트리 깊이 `max_spawn_depth`).
+- **공유 작업보드** — Hermes Agent **Kanban**: 작업=DB 행, 워커=독립 OS 프로세스, 프로필 간 공유 (우리 Supabase `tasks` 큐와 동형).
+- **멀티호스트** — Hermes Agent 6개 백엔드(local·Docker·SSH·Daytona·Singularity·Modal).
 - **다채널 메신저**(텔레그램 등), 상시 가동, 스킬, 스케줄(cron), **DAG 작업 분해**, 전문 역할.
 
-### 헤르메스 에이전트가 더 성숙/우위인 축
+### Hermes Agent가 더 성숙/우위인 축
 - **영속 기억 + 자기 학습 루프**(execute→evaluate→refine + 크로스세션 회상)로 *스스로 축적·개선*. 우리 워커는 기본 세션 기억 의존.
 - **다채널 20+**(Discord·Slack·WhatsApp·Signal·Email) + **음성 메모 자동 전사**.
 - **경량·이식성**($5 VPS 구동) + **보안**(self-generated skills로 공급망 공격면 차단, CVE 0 보고) + **오픈소스(MIT)**.
 - 멀티호스트 백엔드 다양성(Docker·SSH·서버리스 등).
 
 ### Pocket Command System의 실제 차별점
-1. **Claude Code 네이티브 대량 폭발** — 워커가 claude CLI(구독) 위에서 돌고, **백호(Agent Teams) 완편 44명 + DW(Dynamic Workflows) 최대 1,000**으로 단일 명령을 군단급으로 전개. 헤르메스 에이전트 일반 서브에이전트와 다른 *Claude 전용* 메커니즘.
+1. **Claude Code 네이티브 대량 폭발** — 워커가 claude CLI(구독) 위에서 돌고, **백호(Agent Teams) 완편 44명 + DW(Dynamic Workflows) 최대 1,000**으로 단일 명령을 군단급으로 전개. Hermes Agent 일반 서브에이전트와 다른 *Claude 전용* 메커니즘.
 2. **감사관 견제 거버넌스** — 자기 학습이 아니라 **독립된 감사관**이 워커 커밋을 자동 감사 → 워커가 자동 대응(감사↔대응 루프). 산출물 품질을 *별도 주체*가 견제.
-3. **군대 편제 UX + 부대 관제 대시보드** — 지휘관·참모장·중대·소대·분대·감사관의 일관된 지휘 메타포 + 하트비트 EKG 대시보드(Pocket Command Post). (헤르메스 에이전트 Kanban이 *작업* 중심 보드라면, 이쪽은 *부대 생존·상태* 중심 관제.)
+3. **군대 편제 UX + 부대 관제 대시보드** — 지휘관·참모장·중대·소대·분대·감사관의 일관된 지휘 메타포 + 하트비트 EKG 대시보드(Pocket Command Post). (Hermes Agent Kanban이 *작업* 중심 보드라면, 이쪽은 *부대 생존·상태* 중심 관제.)
 
 ### 한 줄 정리
-> 헤르메스 에이전트는 **"스스로 자라는 범용 에이전트 런타임"**(원조·성숙·다채널·학습·이식성).
+> Hermes Agent는 **"스스로 자라는 범용 에이전트 런타임"**(원조·성숙·다채널·학습·이식성).
 > Pocket Command System은 그걸 벤치마킹한 **"Claude Code 네이티브 + 군대식 거버넌스"** 버전 —
 > *개인이 폰으로 다수 PC의 Claude 부대를 지휘하고, 백호/DW로 폭발시키며, 감사관으로 견제*하는 데 특화했다.
 > **닮은 토대 위에, Claude 전용 대량전개·감사 거버넌스·편제 UX를 얹은 것**이 본질이다.
