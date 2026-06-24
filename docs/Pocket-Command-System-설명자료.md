@@ -225,8 +225,6 @@ Claude Code 네이티브 재구현**입니다. 아래는 성능 벤치마크가 
 
 ## 8. 기술 구조
 
-> 여기서부터는 직접 만들거나 이해하려는 개발자를 위한 기술 설명입니다.
-
 ### 8.1 스택
 - **대시보드**: Next.js (App Router) + TypeScript, Vercel 배포.
 - **데이터/실시간**: Supabase(PostgreSQL) — `agents`·`tasks` 테이블 + Realtime 구독.
