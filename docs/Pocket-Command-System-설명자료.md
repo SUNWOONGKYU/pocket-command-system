@@ -4,7 +4,7 @@
 > 스스로 일을 나눠 처리하고 결과를 보고하는 시스템.
 >
 > - **시스템 전체 이름**: Pocket Command System
-> - **대시보드 이름**: Pocket Command Post (포켓 커맨드 포스트)
+> - **대시보드 이름**: Pocket Command Post (포켓 커맨드 포스트 — 관제 화면)
 > - 제작: Finder World
 
 ---
@@ -20,7 +20,6 @@
 8. [기술 구조](#8-기술-구조)
 9. [직접 만들기 — 재현 가이드](#9-직접-만들기--재현-가이드)
 10. [한계와 주의점](#10-한계와-주의점)
-11. [용어집](#11-용어집)
 
 ---
 
@@ -38,7 +37,7 @@ AI(클로드 등)에게 일을 시키려면 보통 **컴퓨터 앞에 앉아 화
 Pocket Command System은 이 셋을 뒤집습니다.
 - **폰만 있으면** 됩니다. 텔레그램으로 "○○ 해줘" 한 줄 보내면 끝.
 - 일은 **백그라운드에서 알아서** 돌아갑니다. 던져놓고 다른 일 하면 됩니다.
-- 일꾼(워커)을 **얼마든지 늘릴 수 있습니다.** 늘릴수록 처리량이 커집니다.
+- 일꾼(워커 = 작업을 실제로 실행하는 AI 프로그램)을 **얼마든지 늘릴 수 있습니다.** 늘릴수록 처리량이 커집니다.
 
 ### 비유
 회사 대표가 외근 중에 **카톡으로 지시**를 내리면, 사무실의 여러 팀이 각자 일을 받아
@@ -67,7 +66,7 @@ Pocket Command System은 이 셋을 뒤집습니다.
 
 | 편제 | 정체 | 설명 |
 |---|---|---|
-| **지휘관** | **사람(PO)** | 최종 명령권자. 통수권자. |
+| **지휘관** | **사람 (PO = Product Owner, 제품 책임자)** | 최종 명령권자. 통수권자. |
 | **참모장** | **오케스트레이터** (클라우드) | 지휘관을 대신해 *임무를 배정·조율*. 직접 일하지 않고 "누가 할지"만 정함. |
 | **중대** | **PC 한 대** | 여러 소대(일꾼)를 호스팅하는 물리 컴퓨터. |
 | **소대** | **워커 한 개** | 실제로 일하는 AI 인스턴스(소대장). |
@@ -115,10 +114,10 @@ Pocket Command System은 이 셋을 뒤집습니다.
 
 - **폰 우선(Phone-first)**: 텔레그램이 입출력 채널. 긴 글(문단 포함)도 끝까지 전달.
 - **수평 확장**: 워커 추가 = 등록 한 줄 + 프로세스 하나. PC를 더 붙이면 또 확장.
-- **실시간 관제(대시보드)**: 각 워커의 생존(하트비트)을 심전도(EKG) 그래프로 표시.
-  살아있으면 파형, 끊기면 평탄선.
+- **실시간 관제(대시보드)**: 각 워커의 생존 신호(하트비트 = 워커가 살아있음을 주기적으로 보내는 신호)를
+  심전도(EKG = electrocardiogram, 심장 박동을 그리는 그 파형) 그래프로 표시. 살아있으면 파형, 끊기면 평탄선.
 - **자동 기동**: PC를 켜고 로그인하면 그 PC의 워커들이 자동으로 살아난다.
-- **감사관(Auditor)**: 워커별 자동 검수. 프로젝트마다 감사 기준이 다르다
+- **감사관(Auditor = 검수 전용 워커)**: 워커별 자동 검수. 프로젝트마다 감사 기준이 다르다
   (예: 코드 정확성·보안·범위 일탈 + 프로젝트 특화 기준).
 - **감사 ↔ 대응 루프**: 감사 의견에 워커가 자동 답변하고 기록을 남긴다.
 - **안전장치**: 감사관은 자동 전용(사람이 못 부름), 감사 기록은 커밋되지 않아 무한루프 방지.
@@ -151,16 +150,16 @@ Pocket Command System은 이 셋을 뒤집습니다.
   대규모 마이그레이션 등 — 한 명령으로 동시 투입.
 
 ### 구성 (요지)
-- **편제 공식**: HQ(소대장 1) + N개 분대 × 13(분대장 1 + 정규병 12) + 용병 4(외부 AI) + Skill Package(지속 확장).
+- **편제 공식**: HQ(본부 = 소대장 1) + N개 분대 × 13(분대장 1 + 정규병 12) + 용병 4(외부 AI) + Skill Package(지속 확장).
   - **A형(기본, 3분대) = 44명** · B형(5분대) = 70명 · C형(6분대~) = 그 이상 (예비병은 분대당 3명 별도).
 - 용병 4 = Codex·Gemini·Grok·Perplexity (외부 AI 공유 풀).
 - 비유: 평소 혼자 순찰하던 소대장이, 작전 명령이 떨어지면 즉석에서 1개 완편 소대를 꾸려 투입.
 
 ### ★★ 특수부대 투입 — DW(Dynamic Workflows): 숫자가 또 폭발한다
-기본 분대(A형 44명)는 **그대로 두고**, 그 위에 **특수부대 DW(Dynamic Workflows)를 추가 편성**하면
+기본 분대(A형 44명)는 **그대로 두고**, 그 위에 **특수부대 DW(Dynamic Workflows = 다중 에이전트 워크플로우)를 추가 편성**하면
 동원 규모가 다시 폭발합니다. (DW는 일반 분대를 대체하는 게 아니라 **추가**되는 부대 — 보병 옆의 포병.)
 
-- **DW = 다중 에이전트 워크플로우(대량 화력).** 하나의 작업을 서브에이전트로 fan-out해 동시 처리·종합.
+- **DW = 다중 에이전트 워크플로우(대량 화력).** 하나의 작업을 서브에이전트로 fan-out(부채살처럼 펼쳐 동시 분배)해 동시 처리·종합.
   - **DW 엔진 1기 = 동시 16 에이전트 / 누적 최대 1,000 에이전트.** DW 부대는 N개까지 편성 가능.
 - 전개 단계:
   ```
@@ -198,20 +197,20 @@ Claude Code 네이티브 재구현**입니다. 아래는 성능 벤치마크가 
 
 ### 공통 토대 (Hermes Agent가 원조, 우리도 채택)
 - **멀티 워커 + 오케스트레이션** — Hermes Agent는 `role="orchestrator"` 자식이 워커를 스폰(트리 깊이 `max_spawn_depth`).
-- **공유 작업보드** — Hermes Agent **Kanban**: 작업=DB 행, 워커=독립 OS 프로세스, 프로필 간 공유 (우리 Supabase `tasks` 큐와 동형).
+- **공유 작업보드** — Hermes Agent **Kanban**(칸반 — 작업을 카드로 늘어놓는 작업 보드): 작업=DB(데이터베이스) 행, 워커=독립 OS(운영체제) 프로세스, 프로필 간 공유 (우리 Supabase `tasks` 큐와 동형).
 - **멀티호스트** — Hermes Agent 6개 백엔드(local·Docker·SSH·Daytona·Singularity·Modal).
-- **다채널 메신저**(텔레그램 등), 상시 가동, 스킬, 스케줄(cron), **DAG 작업 분해**, 전문 역할.
+- **다채널 메신저**(텔레그램 등), 상시 가동, 스킬, 스케줄(cron = 정해진 시각·주기로 자동 실행하는 스케줄러), **DAG(방향성 비순환 그래프 — 작업을 단계 의존 순서로 분해) 작업 분해**, 전문 역할.
 
 ### Hermes Agent가 더 성숙/우위인 축
 - **영속 기억 + 자기 학습 루프**(execute→evaluate→refine + 크로스세션 회상)로 *스스로 축적·개선*. 우리 워커는 기본 세션 기억 의존.
 - **다채널 20+**(Discord·Slack·WhatsApp·Signal·Email) + **음성 메모 자동 전사**.
-- **경량·이식성**($5 VPS 구동) + **보안**(self-generated skills로 공급망 공격면 차단, CVE 0 보고) + **오픈소스(MIT)**.
+- **경량·이식성**($5 VPS(가상 사설 서버) 구동) + **보안**(self-generated skills로 공급망 공격면 차단, CVE(공개 취약점 식별번호) 0건 보고) + **오픈소스(MIT 라이선스)**.
 - 멀티호스트 백엔드 다양성(Docker·SSH·서버리스 등).
 
 ### Pocket Command System의 실제 차별점
 1. **Claude Code 네이티브 대량 폭발** — 워커가 claude CLI(구독) 위에서 돌고, **백호(Agent Teams) 완편 44명 + DW(Dynamic Workflows) 누적 최대 1,000**으로 단일 명령을 군단급으로 전개. Hermes Agent 일반 서브에이전트와 다른 *Claude 전용* 메커니즘.
 2. **감사관 견제 거버넌스** — 자기 학습이 아니라 **독립된 감사관**이 워커 커밋을 자동 감사 → 워커가 자동 대응(감사↔대응 루프). 산출물 품질을 *별도 주체*가 견제.
-3. **군대 편제 UX + 부대 관제 대시보드** — 지휘관·참모장·중대·소대·분대·감사관의 일관된 지휘 메타포 + 하트비트 EKG 대시보드(Pocket Command Post). (Hermes Agent Kanban이 *작업* 중심 보드라면, 이쪽은 *부대 생존·상태* 중심 관제.)
+3. **군대 편제 UX(사용자 경험) + 부대 관제 대시보드** — 지휘관·참모장·중대·소대·분대·감사관의 일관된 지휘 메타포 + 하트비트 EKG 대시보드(Pocket Command Post). (Hermes Agent Kanban이 *작업* 중심 보드라면, 이쪽은 *부대 생존·상태* 중심 관제.)
 
 ### 한 줄 정리
 > Hermes Agent는 **"스스로 자라는 범용 에이전트 런타임"**(원조·성숙·다채널·학습·이식성).
@@ -226,11 +225,11 @@ Claude Code 네이티브 재구현**입니다. 아래는 성능 벤치마크가 
 ## 8. 기술 구조
 
 ### 8.1 스택
-- **대시보드**: Next.js (App Router) + TypeScript, Vercel 배포.
-- **데이터/실시간**: Supabase(PostgreSQL) — `agents`·`tasks` 테이블 + Realtime 구독.
-- **워커 두뇌**: claude CLI(**구독 인증**, API 키 아님) — 로컬 PC의 Claude Code를 실행 엔진으로.
-- **입출력 채널**: Telegram Bot (Webhook 수신 + sendMessage 회신).
-- **호스트**: 각 사용자 PC(Windows) — 워커는 Node(tsx) 데몬 프로세스.
+- **대시보드**: Next.js(React 기반 웹 프레임워크, App Router) + TypeScript(타입을 붙인 자바스크립트), Vercel(웹 배포 호스팅 서비스)로 배포.
+- **데이터/실시간**: Supabase(클라우드 데이터베이스 + 실시간 동기화 서비스 — 내부는 PostgreSQL 관계형 DB) — `agents`·`tasks` 테이블 + Realtime(실시간 동기화) 구독.
+- **워커 두뇌**: claude CLI(명령줄 도구, **구독 인증** — API(Application Programming Interface, 프로그램끼리 연동하는 창구) 키 아님) — 로컬 PC의 Claude Code를 실행 엔진으로.
+- **입출력 채널**: Telegram Bot (Webhook = 외부 이벤트를 실시간으로 받는 수신 URL + sendMessage 회신).
+- **호스트**: 각 사용자 PC(Windows) — 워커는 Node(서버에서 자바스크립트를 실행하는 환경, `tsx`로 TypeScript 직접 실행) 데몬 프로세스.
 
 ### 8.2 데이터 모델 (핵심 2테이블)
 - `agents`: 워커 명단. `name`·`role`·`squad`(중대)·`kind`(python/claude_code/orchestrator)·
@@ -252,14 +251,16 @@ Claude Code 네이티브 재구현**입니다. 아래는 성능 벤치마크가 
           - 결과 → tasks.result + Telegram + 대시보드
 ```
 
+> **담당 결정 우선순위**: 이름 지정 > LLM(대규모 언어모델) 추론 > 키워드 규칙 > sticky(직전 담당 고정 — 같은 대화는 같은 워커에게 이어 붙임).
+
 ### 8.4 핵심 메커니즘
 - **하트비트/생존감지**: 워커가 5초마다 `last_heartbeat_at` 갱신. 대시보드는 이 시각으로
   offline 판정. (Supabase 호출에 타임아웃을 둬 stale 소켓에 의한 정지 방지.)
-- **명령 전달**: 프롬프트는 셸 명령줄이 아니라 **stdin**으로 claude에 전달
+- **명령 전달**: 프롬프트는 셸 명령줄이 아니라 **stdin**(표준 입력 — 프로그램에 데이터를 흘려 넣는 통로)으로 claude에 전달
   (Windows cmd.exe가 멀티라인 인자를 첫 줄에서 잘라먹는 문제 회피).
-- **감사 파이프라인**: 프로젝트 repo의 `post-commit` 훅 → 커밋 정보(해시·diff)를 캡처해
+- **감사 파이프라인**: 프로젝트 repo의 `post-commit` 훅(git에서 커밋 직후 자동 실행되는 스크립트) → 커밋 정보(해시·diff)를 캡처해
   감사 작업을 큐에 적재 → 감사관(claude_code 워커)이 검토 → 의견을 repo 안
-  `_audit/`(gitignore) 폴더에 기록. 감사관이 끝나면 워커에게 "대응" 작업을 자동 적재.
+  `_audit/`(`.gitignore`로 git 추적에서 제외) 폴더에 기록. 감사관이 끝나면 워커에게 "대응" 작업을 자동 적재.
 - **감사관 격리**: 감사관은 소스 **읽기 전용**, 오케스트레이터 배정 후보에서 제외(자동 전용).
 
 ### 8.5 운영 스크립트
@@ -271,17 +272,86 @@ Claude Code 네이티브 재구현**입니다. 아래는 성능 벤치마크가 
 
 ## 9. 직접 만들기 — 재현 가이드
 
-대략의 단계(상세는 실습 강의에서):
-1. **Supabase 프로젝트** 생성 → `agents`·`tasks` 스키마 적용(SQL).
-2. **Telegram 봇** 생성(BotFather) → 토큰 발급 → Webhook 등록.
-3. **대시보드** 배포(Next.js → Vercel) + 환경변수(Supabase·텔레그램) 설정.
-4. **워커 데몬** 설치: 각 PC에 claude CLI(구독 로그인) + Node + repo 클론 → 워커 기동.
-5. **에이전트 등록**: `agents` 테이블에 워커 한 줄 추가(host=그 PC) → 자동 기동에 포함.
-6. (선택) **감사관**: `install-auditor.ps1`로 프로젝트에 감사 파이프라인 장착.
+> **핵심: 맨바닥부터 코딩하지 않습니다.** 완성된 소스 전체가 GitHub에 공개돼 있으니,
+> **그 소스를 클론(복제)해서 설정값만 채우면** 동작합니다. 아래 0단계가 출발점입니다.
+>
+> 📦 **공개 소스**: [github.com/SUNWOONGKYU/pocket-command-system](https://github.com/SUNWOONGKYU/pocket-command-system)
+> — **Apache-2.0 라이선스**(자유 사용·수정·재배포 가능).
 
-> ⚠️ claude는 **구독(OAuth) 인증**으로 호출합니다. API 키를 끼우지 않도록 환경변수를 정리합니다.
+> 💡 **직접 만들기가 어렵다면 — Claude Code에게 시켜서 만들어 달라고 하세요.** 이 문서나 위 공개 소스를 그대로 주고 "이거 보고 나 대신 설치·설정해줘"라고 하면, 클론·환경변수·배포까지 알아서 해줍니다.
 
-소스: [github.com/SUNWOONGKYU/pocket-command-system](https://github.com/SUNWOONGKYU/pocket-command-system) (Apache-2.0)
+### 0단계 — 공개 소스 내려받기 (출발점)
+```bash
+git clone https://github.com/SUNWOONGKYU/pocket-command-system.git
+cd pocket-command-system
+npm install
+```
+
+### 1단계 — 일단 그냥 띄워보기 (설정 0, 데모 모드)
+```bash
+npm run dev      # → http://localhost:3000
+```
+환경변수가 하나도 없어도 대시보드가 **데모 모드**로 16명의 가상 워커를 보여줍니다.
+화면은 둘 — `/`(관제 보드: 누가 일하나·하트비트), `/console`(칸반: 무슨 작업이 어디까지).
+먼저 눈으로 확인한 뒤 실제 연동으로 넘어갑니다.
+
+### 2단계 — Supabase (상태 저장소)
+1. [supabase.com](https://supabase.com)에서 프로젝트 생성.
+2. SQL(데이터베이스 질의 언어) Editor에 저장소의 `supabase/schema.sql`을 **그대로 붙여넣고 실행**
+   → `agents`·`tasks` 테이블 + Realtime + 시드 데이터가 생성된다.
+3. Settings > API 에서 **URL / anon 키 / service_role 키** 복사 (4단계에서 사용).
+
+### 3단계 — 텔레그램 봇 (명령 채널)
+1. 텔레그램에서 **@BotFather** 에게 `/newbot` → **봇 토큰** 발급.
+2. **@userinfobot** 으로 본인 **chat id** 확인(경고·회신을 받을 대상).
+
+### 4단계 — 환경변수 채우기
+저장소의 `.env.local.example`을 `.env.local`로 복사한 뒤 값을 채웁니다:
+```
+NEXT_PUBLIC_SUPABASE_URL=...          # 2단계 URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...     # 2단계 anon 키
+SUPABASE_SERVICE_ROLE_KEY=...         # 2단계 service_role 키
+TELEGRAM_BOT_TOKEN=...                # 3단계 봇 토큰
+TELEGRAM_ALERT_CHAT_ID=...            # 3단계 chat id
+PUBLIC_BASE_URL=https://your-app.vercel.app   # 5단계 배포 도메인
+ANTHROPIC_API_KEY=...                 # 선택 — 없으면 키워드 규칙으로 배분
+```
+
+### 5단계 — 대시보드 배포 + Webhook 연결 (Vercel 권장)
+1. 저장소를 Vercel에 연결해 배포(위 환경변수를 그대로 입력).
+2. 배포 후 텔레그램 Webhook을 등록:
+   ```bash
+   PUBLIC_BASE_URL=https://your-app.vercel.app npm run set-webhook
+   ```
+3. `vercel.json`의 Cron이 1분마다 `/api/monitor`를 호출해 하트비트 끊김을 감시합니다.
+
+### 6단계 — 워커(일꾼) 띄우기 — 일 시킬 PC마다
+각 PC에 ① claude CLI(구독 로그인 완료) ② Node ③ 이 저장소 클론을 준비한 뒤:
+```bash
+AGENT_NAME=알파조 npm run worker
+AGENT_NAME=정화백 npm run worker
+# 필요한 워커 수만큼 (PM2(프로세스 관리 도구)나 셸 루프로 일괄 가능)
+```
+- **로그온 시 자동 기동**: `install-autostart.ps1` 실행(작업 스케줄러 등록).
+- **코드 갱신**: `update.bat`(git pull + 의존성 + 이 PC 워커 재기동, 원클릭).
+
+### 7단계 — 에이전트 등록
+`agents` 테이블에 워커를 한 줄 추가합니다 — `name`(워커 이름)·`host`(어느 PC)·
+`kind`(claude_code 등)·`workdir`(작업 폴더). 등록하면 자동 기동·배정 대상에 포함됩니다.
+
+### 8단계 (선택) — 감사관 장착
+검수를 자동화하려면 검수할 프로젝트 저장소에서:
+```bash
+powershell ./install-auditor.ps1
+```
+→ `_audit/` 폴더 + `.gitignore` + `post-commit` 훅이 설치되어, 커밋할 때마다
+감사관이 자동으로 검토하고 워커가 대응합니다.
+
+> ⚠️ **인증 주의**: claude는 **구독(OAuth = 개방형 인증 표준) 로그인**으로 호출합니다.
+> `ANTHROPIC_API_KEY` 같은 API 키가 워커 PC 환경에 남아 있으면 구독 대신 키로 과금될 수 있으니,
+> 워커 PC에서는 키를 비워 두세요. (오케스트레이터의 LLM 라우팅용 키는 별개·선택입니다.)
+> ⚠️ **권한 주의**: claude_code 워커는 무인 실행(`--dangerously-skip-permissions`)되므로
+> `workdir`를 프로젝트별로 **좁게** 잡으세요.
 
 ---
 
@@ -297,16 +367,5 @@ Claude Code 네이티브 재구현**입니다. 아래는 성능 벤치마크가 
 
 ---
 
-## 11. 용어집
-
-- **지휘관(PO)**: 사람. 최종 명령권자.
-- **참모장 / 오케스트레이터**: 명령을 받아 담당 워커에게 배정·조율하는 클라우드 함수.
-- **중대 / 소대 / 분대**: PC / 워커 / 즉석 소환 팀원.
-- **감사관(Auditor)**: 특정 워커의 산출물을 자동 검수하는 전용 워커.
-- **하트비트**: 워커가 살아있음을 주기적으로 알리는 신호(대시보드 EKG).
-- **워커(Worker)**: 실제 작업을 실행하는 AI 데몬 프로세스.
-- **Pocket Command Post**: 이 시스템의 대시보드(관제 화면) 이름.
-
----
-
 *이 문서는 Pocket Command System의 공식 설명 자료입니다. HTML·PPT·영상 버전의 원천 자료로 사용됩니다.*
+*전문 용어·약자는 본문에서 처음 나오는 자리에 괄호로 풀이를 달았습니다(별도 용어집 없음).*

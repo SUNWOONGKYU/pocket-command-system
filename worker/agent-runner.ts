@@ -92,14 +92,18 @@ async function runPython(cmdText: string, a: Agent): Promise<RunResult> {
 
 async function runClaudeCode(cmdText: string, a: Agent): Promise<RunResult> {
   // 저장된 세션을 먼저 확인 → 첫 턴인지 이어지는 대화인지 판단
-  const { data: cur } = await sb.from('agents').select('session_id').eq('name', a.name).maybeSingle();
+  const { data: cur } = await sb.from('agents').select('session_id, entry').eq('name', a.name).maybeSingle();
   let sid: string | null = cur?.session_id ?? null;
 
   // 구독(OAuth) 강제 — 환경의 ANTHROPIC_API_KEY가 끼어들면 claude CLI가 API 모드로 빠진다(401 등).
-  // 참고: 운영자 규칙 = LLM은 API 아닌 CLI(구독)로 호출.
+  // 참고: LLM은 API 아닌 CLI(구독)로 호출.
   const childEnv = { ...process.env };
   delete childEnv.ANTHROPIC_API_KEY;
   delete childEnv.ANTHROPIC_AUTH_TOKEN;
+  // (선택) 워커별 구독 계정 분리: claude_code 워커의 entry 컬럼에 CLAUDE_CONFIG_DIR 경로를 넣으면
+  // 그 폴더(=별도 로그인된 계정)로 claude를 실행한다 → 같은 PC에서 워커마다 다른 구독·다른 rate limit.
+  // entry는 본래 python 전용 컬럼이라 claude_code에선 비어 있어 재활용(없으면 머신 기본 계정).
+  if (cur?.entry) childEnv.CLAUDE_CONFIG_DIR = cur.entry;
 
   // 첫 턴(세션 없음)이고 스킬 에이전트면 스킬 발동, 이후 턴은 평문 + --resume(대화 모드).
   // 프롬프트(cmdText)는 명령줄이 아니라 stdin으로 넘긴다(멀티라인 truncation 방지). claude -p 는 stdin을 프롬프트로 읽는다.
@@ -123,6 +127,10 @@ async function runClaudeCode(cmdText: string, a: Agent): Promise<RunResult> {
     await sb.from('agents').update({ session_id: null }).eq('name', a.name);
     sid = null;
     r = await exec('claude', buildArgs(null), a.workdir || undefined, childEnv, buildPrompt(null));
+  }
+  // 모델 폴백: 기본 모델이 한도(429/주간 한도)에 막히면 sonnet으로 1회 자동 재시도.
+  if (/"api_error_status"\s*:\s*429|usage limit|weekly limit|hit your .{0,40}limit/i.test(r.output)) {
+    r = await exec('claude', [...buildArgs(sid), '--model', 'sonnet'], a.workdir || undefined, childEnv, buildPrompt(sid));
   }
   if (!r.ok) return r;
   try {
