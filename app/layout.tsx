@@ -14,6 +14,8 @@ export const viewport = {
   width: 'device-width',
   initialScale: 1,
   themeColor: '#0a0e0a',
+  // 키보드가 뜨면 레이아웃 뷰포트를 줄여 고정 입력창(컴포저)이 키보드 위에 남게 (Android Chrome)
+  interactiveWidget: 'resizes-content' as const,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

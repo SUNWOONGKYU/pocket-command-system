@@ -112,7 +112,7 @@ export default function Console() {
           <span className="sub">TASK KANBAN · 작업 관제</span>
         </div>
         <nav className="nav">
-          <Link href="/">관제 보드</Link>
+          <Link href="/cockpit">콕핏</Link>
           <Link href="/console" className="active">콘솔</Link>
         </nav>
         <div className="bar-spacer" />

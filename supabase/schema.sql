@@ -21,7 +21,7 @@ create table if not exists agents (
   kind             text not null default 'claude_api', -- python | claude_code | claude_api | orchestrator
   host             text,                          -- 어느 로컬 머신에 사는지 (예: PC-A)
   workdir          text,                          -- 작업 디렉터리 (python/claude_code 실행 위치)
-  entry            text,                          -- python: 실행 스크립트 경로 / claude_code: (선택) CLAUDE_CONFIG_DIR 경로(워커별 구독 계정 분리)
+  entry            text,                          -- python 일 때 실행할 스크립트 경로
   skill            text,                          -- claude_code 일 때 발동할 스킬명 (예: youtube-analysis)
   session_id       text,                          -- claude_code 대화 세션 이어붙이기용
   status           agent_status not null default 'idle',

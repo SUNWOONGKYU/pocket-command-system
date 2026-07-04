@@ -7,6 +7,11 @@ import { sendTelegram } from '@/lib/telegram';
 import { HEARTBEAT_TIMEOUT_SEC, STUCK_TIMEOUT_SEC } from '@/lib/types';
 import type { Agent } from '@/lib/types';
 
+// 2026-06-24 PO 지시: 관제 경고(텔레그램)를 영구 비활성. 워커 데몬 정지 시 매분 스팸이 나가던 문제.
+// 상태 갱신(offline 표시) 로직은 유지하되, 텔레그램 경고 발송만 차단한다.
+// (cron 자체도 vercel.json에서 제거됨 — 이건 이중 안전장치.) 다시 켜려면 false.
+const ALERTS_DISABLED = true;
+
 export const runtime = 'nodejs';
 // GET 라우트라 Next가 빌드 타임에 정적 평가(프리렌더)하려 한다 →
 // 그 시점엔 env가 없어 createAdminClient()가 throw. Cron이 매번 호출하는 동적 엔드포인트이므로 강제 동적화.
@@ -42,7 +47,7 @@ export async function GET() {
     }
   }
 
-  if (flagged.length && alertChat) {
+  if (flagged.length && alertChat && !ALERTS_DISABLED) {
     await sendTelegram(alertChat, `🚨 <b>관제 경고</b>\n${flagged.join('\n')}`);
   }
 

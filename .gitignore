@@ -35,4 +35,10 @@ docs/*.zip
 /logs/
 scripts/.my-agents.txt
 
+# 세션 핸드오프(대화 전사·요약·위키 — 개인/세션 데이터, 코드 아님 → 추적 제외)
+/sessions/
+
 .vercel
+
+# audit trail (do not commit - prevents post-commit recursion)
+_audit/
