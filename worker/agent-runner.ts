@@ -104,6 +104,9 @@ async function runClaudeCode(cmdText: string, a: Agent): Promise<RunResult> {
   const childEnv = { ...process.env };
   delete childEnv.ANTHROPIC_API_KEY;
   delete childEnv.ANTHROPIC_AUTH_TOKEN;
+  // 이 워커가 지금 실행 중임을 표시 — git post-commit 훅(enqueue-audit.js)이 이 값을 보고
+  // '이 커밋을 만든 게 이 워커 자신인지'를 판별한다(대화형 세션이 같은 repo에 커밋하면 이 값이 없음).
+  childEnv.PCS_ACTOR = a.name;
   // 워커별 구독 계정 분리 — claude_code 워커의 entry 컬럼에 CLAUDE_CONFIG_DIR 경로를 넣으면 그 폴더(=해당 계정 로그인)로 실행.
   // entry는 본래 python 전용 컬럼이라 claude_code에선 비어 있어 재활용(신규 컬럼 DDL 권한이 없어 entry 사용).
   // 없으면 머신 기본 계정. 같은 PC에서 워커마다 다른 구독·다른 rate limit. (PO 지시 2026-06-26: 브라보=계정#2)
@@ -315,7 +318,13 @@ async function pickAndRun(self: Agent) {
       if (mm) {
         const meta: Record<string, string> = {};
         mm[1].split('|').forEach((kv: string) => { const i = kv.indexOf('='); if (i > 0) meta[kv.slice(0, i)] = kv.slice(i + 1); });
-        if (meta.worker && meta.auditDir) {
+        // actor=interactive(대화형 Claude Code 세션이 만든 커밋)면, 그 일을 안 한 유휴 워커에게
+        // '대응 작업'을 떠넘기지 않는다 — 그 워커는 맥락이 없어 전체를 다시 뒤져야 하고(토큰 낭비),
+        // 애초에 대응할 당사자도 아니다. 감사 결과는 텔레그램 알림으로만 전달(사람이 직접 확인·대응).
+        if (meta.actor === 'interactive') {
+          await telegram(task.source_chat_id, `🔍 <b>${escHtml(NAME!)}</b> 감사 완료(대화형 세션 커밋 ${meta.commit || ''}) — 대응은 해당 세션에서 직접 확인하세요.\n${mdToTelegram(r.output)}`);
+          console.log(`[${NAME}] 대화형 세션 커밋 — 워커 대응 작업 생략, 텔레그램 알림만 전송`);
+        } else if (meta.worker && meta.auditDir) {
           const respPrompt =
 `[감사 대응] '${NAME}'이(가) 너의 커밋(${meta.commit || ''})을 감사했다. 아래 감사 의견을 읽고 입장을 한국어로 밝혀라(수용/부분수용/반론 + 조치계획). 그 대응을 '${meta.auditDir}/대응이력.md' 에 append 하라(헤더에 커밋 ${meta.commit || ''}·시각 포함). 코드 수정이 필요하면 정상 작업으로 진행해도 된다(새 커밋은 다시 자동 감사된다).
 

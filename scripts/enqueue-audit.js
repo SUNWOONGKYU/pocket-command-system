@@ -122,8 +122,15 @@ function git(a) { try { return execSync('git ' + a, { encoding: 'utf8', maxBuffe
   let chatId = null;
   try { const r = await fetch(url + '/rest/v1/tasks?source_chat_id=not.is.null&select=source_chat_id&order=created_at.desc&limit=1', { headers: H }); const j = await r.json(); chatId = (j && j[0]) ? j[0].source_chat_id : null; } catch { }
 
+  // 이 커밋이 실제로 워커 데몬(agent-runner) 자신의 작업 실행 중에 만들어졌는지 판별.
+  //   워커 데몬은 claude 하위 프로세스에 PCS_ACTOR=<워커명>을 심어 실행한다(agent-runner.ts).
+  //   대화형 Claude Code 세션(사람이 직접 붙어 작업)은 이 환경변수가 없으므로 actor가 다르게 찍힌다.
+  //   → 감사 자체는 항상 하되(누가 커밋했든 품질 게이트는 필요), '감사 대응'을 엉뚱한 유휴 워커에게
+  //     떠넘기지 않기 위해 이 표식을 감사 완료 후 대응 라우팅 판단에 쓴다(agent-runner.ts 참고).
+  const actor = process.env.PCS_ACTOR === cfg.worker ? 'daemon' : 'interactive';
+
   const prompt =
-`[커밋 감사 — 소스 읽기전용] ${cfg.worker}가 방금 ${projectKey} 저장소에 만든 커밋이다.
+`[커밋 감사 — 소스 읽기전용] ${projectKey} 저장소에 새 커밋이 생겼다(${actor === 'daemon' ? `워커 '${cfg.worker}'가 자기 작업 중 생성` : '대화형 Claude Code 세션에서 생성 — 워커 자동 작업 아님'}).
 커밋: ${hash}
 작성자: ${author}
 메시지: ${subject}${bodyRaw ? ('\n' + bodyRaw) : ''}
@@ -141,7 +148,7 @@ ${cfg.criteria}
 - 저장소 소스 파일은 절대 수정·커밋하지 마라. 읽기·검토만(맥락 필요시 git show·파일 읽기).
 - 단, '${auditDir}' 폴더에는 쓰기 허용. 감사 의견을 '${auditDir}/감사이력.md' 에 append 하라(헤더에 커밋 ${short}·시각 포함).
 - 감사 의견은 한국어로 간결하게: 첫 줄에 판정 [정상]/[경미]/[주의]/[중대], 이어서 기준별 근거·권고.
-[[AUDITMETA project=${projectKey}|worker=${cfg.worker}|auditDir=${auditDir}|commit=${short}|host=${os.hostname()}]]`;
+[[AUDITMETA project=${projectKey}|worker=${cfg.worker}|auditDir=${auditDir}|commit=${short}|host=${os.hostname()}|actor=${actor}]]`;
 
   try {
     const r = await fetch(url + '/rest/v1/tasks', { method: 'POST', headers: H, body: JSON.stringify({ command_text: prompt, assigned_agent: cfg.auditor, status: 'queued', source_chat_id: chatId }) });
