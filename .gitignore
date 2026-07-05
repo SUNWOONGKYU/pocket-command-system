@@ -42,3 +42,7 @@ scripts/.my-agents.txt
 
 # audit trail (do not commit - prevents post-commit recursion)
 _audit/
+
+# 운영 전용 로컬 기록 (실PC명·실경로·내부 운영 히스토리 — 공개 repo로 전환된 뒤 추적 제외)
+/_WorkLog/
+docs/데몬워커-편제-운영지식.md
