@@ -43,6 +43,7 @@ export default function Cockpit() {
   const [live, setLive] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
+  const [dockH, setDockH] = useState(168); // 하단 독의 실제 높이 — 본문 여백으로 예약(최신 글이 독 뒤에 가리지 않게)
 
   // 모바일 키보드가 올라오면 명령 독을 키보드 위로 띄운다(전송 버튼이 안 가리게)
   useEffect(() => {
@@ -55,6 +56,18 @@ export default function Cockpit() {
     vv.addEventListener('resize', onResize);
     vv.addEventListener('scroll', onResize);
     return () => { vv.removeEventListener('resize', onResize); vv.removeEventListener('scroll', onResize); };
+  }, []);
+
+  // 하단 독의 실제 높이를 추적 — 독 높이만큼 본문 아래 여백을 예약해야 맨 아래 글이 독에 가리지 않는다.
+  // (독은 position:fixed이고 빠른버튼+여러 줄 컴포저로 높이가 변해, CSS 고정 padding-bottom으론 부족했다.)
+  useEffect(() => {
+    const el = dockRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const update = () => setDockH(el.offsetHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   useEffect(() => {
@@ -147,12 +160,18 @@ export default function Cockpit() {
     ? tasks.filter((t) => t.assigned_agent === selProj.worker)
     : tasks.slice(0, 30);
 
-  // 대화 열기·전송·새 메시지 도착 시 맨 아래(최신)로 스크롤 — 방금 보낸 글이 항상 보이게
-  const chatSig = `${sel}|${pending.length}|${shownTasks.length}`;
+  // 대화 열기·전송·새 메시지 도착(텔레그램 포함)·독 높이 변화 시 맨 아래(최신)로 스크롤 — 방금 보낸/도착한 글이 항상 보이게.
+  // 고정 타이머(70ms) 대신 레이아웃 반영 후(rAF 2회) 스크롤해, 새 말풍선의 실제 높이가 반영된 뒤 정확히 바닥으로 간다.
+  const chatSig = `${sel}|${pending.length}|${shownTasks.length}|${dockH}`;
   useEffect(() => {
     if (!sel) return;
-    const id = setTimeout(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' }), 70);
-    return () => clearTimeout(id);
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' });
+      });
+    });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatSig]);
 
@@ -185,7 +204,7 @@ export default function Cockpit() {
         </nav>
       </header>
 
-      <div className={selProj ? `${s.cockpit} ${s.chatMode}` : s.cockpit}>
+      <div className={selProj ? `${s.cockpit} ${s.chatMode}` : s.cockpit} style={{ paddingBottom: dockH + 24 }}>
         <div className={s.head}>
           <h2>내 프로젝트</h2>
           <span className="count">{PROJECTS.length}개 · 워커+감사관 · 카드 탭 → 명령·태스크</span>
