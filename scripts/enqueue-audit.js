@@ -146,7 +146,10 @@ ${cfg.criteria}
 
 규칙:
 - 저장소 소스 파일은 절대 수정·커밋하지 마라. 읽기·검토만(맥락 필요시 git show·파일 읽기).
-- 단, '${auditDir}' 폴더에는 쓰기 허용. 감사 의견을 '${auditDir}/감사이력.md' 에 append 하라(헤더에 커밋 ${short}·시각 포함).
+- 단, '${auditDir}' 폴더에는 쓰기 허용. 감사 의견을 '${auditDir}/감사이력.md' 에 append 하라.
+- 헤더 형식(둘 중 하나, 그대로 사용): ${actor === 'daemon'
+  ? `'## 커밋 ${short} 감사 — <시각> (${cfg.auditor})' — 워커 '${cfg.worker}'의 정상 자동 작업 커밋.`
+  : `'## 커밋 ${short} 감사 — <시각> (${cfg.auditor}) [대화형 세션 전달 필요]' — 대화형 Claude Code 세션이 만든 커밋이라, 워커 '${cfg.worker}'가 아니라 그 대화형 세션이 확인·응답해야 함을 헤더에 명시하라. 대응 작업은 워커에게 자동 배정되지 않는다.`}
 - 감사 의견은 한국어로 간결하게: 첫 줄에 판정 [정상]/[경미]/[주의]/[중대], 이어서 기준별 근거·권고.
 [[AUDITMETA project=${projectKey}|worker=${cfg.worker}|auditDir=${auditDir}|commit=${short}|host=${os.hostname()}|actor=${actor}]]`;
 
