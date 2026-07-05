@@ -40,6 +40,7 @@ export default function Cockpit() {
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [pending, setPending] = useState<{ id: string; text: string; agent: string; failed?: boolean }[]>([]);
+  const [live, setLive] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
 
@@ -63,7 +64,7 @@ export default function Cockpit() {
 
   useEffect(() => {
     const sb = createBrowserClient();
-    if (!sb) return; // 콕핏은 라이브 전용 (데모 시드 없음)
+    if (!sb) { setLive(false); return; } // 콕핏은 라이브 전용 (데모 시드 없음) — 미설정 시 안내 배너로 알림
     const load = async () => {
       const [{ data: a }, { data: tk }] = await Promise.all([
         sb.from('agents').select('*'),
@@ -189,6 +190,14 @@ export default function Cockpit() {
           <h2>내 프로젝트</h2>
           <span className="count">{PROJECTS.length}개 · 워커+감사관 · 카드 탭 → 명령·태스크</span>
         </div>
+
+        {!live && (
+          <div className={s.banner}>
+            <span className={s.bannerItem}>
+              ⚠ Supabase 미설정 — 콕핏은 라이브 전용이라 데모 데이터가 없습니다. 데모는 <Link href="/console">/console</Link>에서, 실제 동작은 `.env.local`에 Supabase 값을 채운 뒤 확인하세요.
+            </span>
+          </div>
+        )}
 
         {(alerts.length > 0 || auditAlerts.length > 0) && (
           <div className={s.banner}>
