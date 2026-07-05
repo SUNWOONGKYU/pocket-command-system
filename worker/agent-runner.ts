@@ -122,6 +122,9 @@ async function runClaudeCode(cmdText: string, a: Agent): Promise<RunResult> {
       '절대 수정·실행하지 말고, 필요하면 읽기·검토만 하라. 작업 폴더 범위 안에서 요청받은 일만 수행하라.';
     const args = [
       '-p', '--output-format', 'json', '--dangerously-skip-permissions',
+      // PC별로 매번 바뀌는 부분(cwd·git상태 등)을 시스템 프롬프트에서 첫 유저 메시지로 옮겨
+      // 프롬프트 캐시 재사용률을 높인다. 부작용 없음(구독 인증·스킬·MCP 전부 그대로).
+      '--exclude-dynamic-system-prompt-sections',
       '--append-system-prompt', `너는 '${a.name}'. 역할: ${a.role}. ${guard}`,
     ];
     if (useSid) args.push('--resume', useSid);
