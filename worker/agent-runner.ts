@@ -191,6 +191,19 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// 감사 작업(command_text)에서 진짜 [[AUDITMETA ...]] 꼬리표를 추출한다.
+//   ★ 반드시 '마지막' 매치를 써야 한다 — 감사 대상 커밋의 diff가 이 파싱 코드 자체를
+//     건드리는 변경이면, diff 본문에 [[AUDITMETA ...]] 예시 문자열이 리터럴로 포함돼
+//     .match()의 '첫 매치'가 그 가짜 텍스트를 진짜로 오인한다(실제 발생 — 2026-07-05).
+//     진짜 꼬리표는 enqueue-audit.js 템플릿의 항상 맨 끝 줄이므로 마지막 매치가 항상 맞다.
+function parseAuditMeta(commandText: string): Record<string, string> | null {
+  const all = [...commandText.matchAll(/\[\[AUDITMETA ([^\]]+)\]\]/g)];
+  if (!all.length) return null;
+  const meta: Record<string, string> = {};
+  all[all.length - 1][1].split('|').forEach((kv) => { const i = kv.indexOf('='); if (i > 0) meta[kv.slice(0, i)] = kv.slice(i + 1); });
+  return meta;
+}
+
 // 마크다운 → 텔레그램 HTML 변환. claude 응답의 **별표**·#샤프·- 불릿이 그대로 글자로
 // 보이지 않게, 텔레그램이 알아듣는 서식(굵게·코드 등)으로 바꾼다.
 function mdToTelegram(md: string): string {
@@ -277,10 +290,8 @@ async function pickAndRun(self: Agent) {
   //   fail-closed로 인해 정상 감사가 막히지 않는다(전 PC가 이 커밋을 pull한 뒤 정상 상태).
   //   enqueue 측 host 게이트가 1차 방어, 여기가 최종 방어.
   if (NAME!.endsWith('감사관')) {
-    const mm = task.command_text.match(/\[\[AUDITMETA ([^\]]+)\]\]/);
-    if (mm) {
-      const meta: Record<string, string> = {};
-      mm[1].split('|').forEach((kv: string) => { const i = kv.indexOf('='); if (i > 0) meta[kv.slice(0, i)] = kv.slice(i + 1); });
+    const meta = parseAuditMeta(task.command_text);
+    if (meta) {
       const origin = meta.host;
       if (!origin || origin.toLowerCase() !== HOST.toLowerCase()) {
         const reason = origin ? `다른 PC(origin=${origin})에서 생성됨` : 'origin 미표기(스탬프 없는 적재 — 검증 불가)';
@@ -314,10 +325,8 @@ async function pickAndRun(self: Agent) {
     // 감사관이 감사를 마치면, 그 결과를 작업 워커에게 자동으로 보내 '대응'을 받는다.
     // (감사관은 자동 전용 — 이 대응 적재도 오케스트레이터를 거치지 않고 워커에게 직접 배정한다.)
     if (r.ok && NAME && NAME.endsWith('감사관')) {
-      const mm = task.command_text.match(/\[\[AUDITMETA ([^\]]+)\]\]/);
-      if (mm) {
-        const meta: Record<string, string> = {};
-        mm[1].split('|').forEach((kv: string) => { const i = kv.indexOf('='); if (i > 0) meta[kv.slice(0, i)] = kv.slice(i + 1); });
+      const meta = parseAuditMeta(task.command_text);
+      if (meta) {
         // actor=interactive(대화형 Claude Code 세션이 만든 커밋)면, 그 일을 안 한 유휴 워커에게
         // '대응 작업'을 떠넘기지 않는다 — 그 워커는 맥락이 없어 전체를 다시 뒤져야 하고(토큰 낭비),
         // 애초에 대응할 당사자도 아니다. 감사 결과는 텔레그램 알림으로만 전달(사람이 직접 확인·대응).
