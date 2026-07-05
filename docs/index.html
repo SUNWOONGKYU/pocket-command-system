@@ -261,6 +261,7 @@
       <li><strong>대시보드</strong> 배포(Next.js → Vercel) + 환경변수(Supabase·텔레그램)</li>
       <li><strong>워커 데몬</strong> 설치: 각 PC에 claude CLI(구독 로그인) + Node + repo 클론 → 워커 기동</li>
       <li><strong>에이전트 등록</strong>: <code>agents</code>에 워커 한 줄 추가(host=그 PC) → 자동 기동 포함</li>
+      <li><strong>콕핏 프로젝트 매핑</strong>: <code>config/projects.json</code>에 <code>worker</code>/<code>auditor</code>(agents.name과 일치)로 프로젝트 카드 정의</li>
       <li>(선택) <strong>감사관</strong>: <code>install-auditor.ps1</code>로 프로젝트에 감사 파이프라인 장착</li>
     </ol>
     <div class="callout warn">⚠️ claude는 <strong>구독(OAuth) 인증</strong>으로 호출. API 키를 끼우지 않도록 환경변수를 정리한다.</div>
