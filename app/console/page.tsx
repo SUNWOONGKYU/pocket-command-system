@@ -27,7 +27,6 @@ function uid() { return Math.random().toString(36).slice(2, 9); }
 export default function Console() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [demo, setDemo] = useState(false);
-  const [view, setView] = useState<'kanban' | 'feed'>('kanban');
   const demoRef = useRef<Task[]>([]);
 
   useEffect(() => {
@@ -116,15 +115,10 @@ export default function Console() {
           <Link href="/console" className="active">콘솔</Link>
         </nav>
         <div className="bar-spacer" />
-        <div className="view-toggle">
-          <button className={view === 'kanban' ? 'vt active' : 'vt'} onClick={() => setView('kanban')}>칸반</button>
-          <button className={view === 'feed' ? 'vt active' : 'vt'} onClick={() => setView('feed')}>피드</button>
-        </div>
         {demo && <span className="demo-flag">DEMO MODE</span>}
       </header>
 
       <div className="console-body">
-        {view === 'kanban' ? (
         <div className="kanban">
           {COLS.map((col) => {
             const cards = byCol(col.key);
@@ -164,23 +158,6 @@ export default function Console() {
             );
           })}
         </div>
-        ) : (
-        <div className="feed-view">
-          <div className="feed-head"><span>▦ LIVE FEED · 시간순</span><span className="fv-count">{tasks.length}건</span></div>
-          {tasks.length === 0 && <div className="col-empty">— 작업 없음 —</div>}
-          {[...tasks].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).map((t) => {
-            const col = COLS.find((c) => c.key === t.status);
-            return (
-              <div className="feed-row" key={t.id} style={{ borderLeftColor: col?.color || '#4a8f6b' }}>
-                <span className="fr-time">{new Date(t.updated_at).toLocaleTimeString('ko-KR', { hour12: false })}</span>
-                <span className="fr-agent">{t.assigned_agent ?? '미배정'}</span>
-                <span className="fr-status" style={{ color: col?.color }}>{col?.label ?? t.status}</span>
-                <span className="fr-cmd">{t.command_text}</span>
-              </div>
-            );
-          })}
-        </div>
-        )}
       </div>
     </div>
   );
