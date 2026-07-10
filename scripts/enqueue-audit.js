@@ -71,7 +71,13 @@ function git(a) { try { return execSync('git ' + a, { encoding: 'utf8', maxBuffe
   const cfg = PROJECTS[projectKey];
   if (!cfg) { console.error('[audit] 알 수 없는 프로젝트키:', projectKey, '— 스킵'); process.exit(0); }
 
-  const repo = process.cwd();
+  // ★ 워커 worktree 격리(PCS_WORKTREE) 도입 후: 커밋이 worktree cwd에서 만들어지면 process.cwd()가
+  //   메인이 아닌 worktree 경로가 되어 auditDir이 워크트리별로 파편화된다(감사 이력이 메인 _audit과 따로 놈).
+  //   `git rev-parse --git-common-dir`는 메인에서 실행하면 '.git'(상대), worktree에서 실행하면 항상
+  //   메인 워크트리의 절대경로 '.git'을 반환한다 — 그 부모가 어느 cwd에서든 항상 메인 워크트리 루트다.
+  //   (실측 확인: 임시 repo에서 메인='.git', worktree=절대경로 '<메인루트>/.git' 반환.)
+  const commonDir = git('rev-parse --git-common-dir').trim();
+  const repo = commonDir ? path.resolve(commonDir, '..') : process.cwd(); // 조회 실패 시 기존 동작(cwd)으로 폴백
   // 폴더명은 ASCII '_audit' — PowerShell 5.1이 한글 경로를 오독하는 문제 회피. (로그 파일명은 한글 유지)
   const auditDir = path.join(repo, '_audit').replace(/\\/g, '/');
 

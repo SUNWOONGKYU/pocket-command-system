@@ -8,7 +8,7 @@
 try { process.loadEnvFile('.env.local'); } catch { /* 파일 없으면 셸 환경변수 사용 */ }
 
 import { createClient } from '@supabase/supabase-js';
-import { spawn, ChildProcess, type StdioOptions } from 'node:child_process';
+import { spawn, execSync, ChildProcess, type StdioOptions } from 'node:child_process';
 import * as os from 'node:os';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -52,12 +52,20 @@ const STOP_POLL_MS = 1500; // 중단 신호 감지 주기
 const MAX_OUTPUT = 3500;
 const USAGE_POLL_MS = 60000; // claude_code 워커의 구독 사용률 조회 주기(하트비트마다는 과함 — 60초 캐시)
 
+// ── 워커 worktree 격리 — 절대 옵트인 플래그 ─────────────────────────
+//   ★ 이 플래그가 '1'이 아니면 이 세션의 코드는 기존 동작과 1비트도 다르지 않다(회귀 0).
+//   같은 repo·같은 브랜치에 워커+대화형 세션이 동시 커밋하며 HEAD가 꼬이는 문제를,
+//   워커를 격리 worktree(독립 브랜치)로 빼내 원천 제거하기 위한 실험적 경로 — 파일럿 워커만 켠다.
+const PCS_WORKTREE = process.env.PCS_WORKTREE === '1';
+
 type Agent = { name: string; kind: string; workdir: string | null; entry: string | null; skill: string | null; role: string; beats: number; status: string; };
 type RunResult = { ok: boolean; output: string };
 
 // ── 현재 실행 중인 작업 핸들 (중단용) ──────────────────────────
-const current: { taskId: string | null; child: ChildProcess | null; abort: AbortController | null; killed: boolean } =
-  { taskId: null, child: null, abort: null, killed: false };
+//   sourceChatId: mergeBack 충돌 알림을 텔레그램으로 보낼 때 쓸 chat id. ADAPTERS 시그니처를
+//   바꾸지 않으려고(회귀 위험 최소화) task 정보 일부를 taskId처럼 여기 실어 나른다.
+const current: { taskId: string | null; sourceChatId: number | null; child: ChildProcess | null; abort: AbortController | null; killed: boolean } =
+  { taskId: null, sourceChatId: null, child: null, abort: null, killed: false };
 
 const IS_WIN = process.platform === 'win32';
 
@@ -141,10 +149,98 @@ function summarizeStreamLine(line: string): string | null {
   return parts.length ? parts.join(' ') : null;
 }
 
+// ── 워커 worktree 격리 헬퍼 (PCS_WORKTREE=1 일 때만 호출됨) ─────────
+// 전부 동기 git 호출 + try/catch. 어떤 단계든 실패하면 null/false를 반환해 호출부가
+// 기존 직접 실행(a.workdir)으로 그대로 폴백하게 한다 — 워커 루프를 절대 막지 않는다.
+function gitSync(args: string, cwd: string): string {
+  return execSync(`git ${args}`, { cwd, encoding: 'utf8' }).trim();
+}
+
+// worktree가 없으면 만들고, 있으면 재사용 + 메인 브랜치의 새 커밋을 흡수(merge)한다.
+// 성공 시 worktree 절대경로, 실패(non-git·충돌·detached HEAD 등) 시 null을 반환한다.
+function ensureWorktree(repoRoot: string, worker: string): string | null {
+  try {
+    // repoRoot가 실제 git repo가 아니면(non-git workdir) 여기서 예외 → null 폴백.
+    const base = gitSync('rev-parse --abbrev-ref HEAD', repoRoot);
+    // detached HEAD(브랜치 아닌 커밋을 직접 checkout한 상태)면 이 명령이 리터럴 문자열 'HEAD'를
+    // 반환한다(실측 확인) — 'HEAD'를 그대로 base로 써서 worktree add/merge에 넘기면 꼬인다.
+    // 이런 비정상 상태에서는 worktree 격리를 포기하고 기존 직접 실행으로 폴백한다.
+    if (base === 'HEAD') return null;
+    const repoName = path.basename(repoRoot);
+    const safeName = worker.replace(/\s+/g, '_');
+    // repo 밖에 둔다 — repo 안에 두면 git status에 '?? _pcwork/'로 오염된다(실측 확인).
+    const wtRoot = path.resolve(repoRoot, '..', '_pcwork', repoName, safeName);
+    const branch = `pcs/${safeName}`;
+
+    const exists = fs.existsSync(path.join(wtRoot, '.git'));
+    if (!exists) {
+      fs.mkdirSync(path.dirname(wtRoot), { recursive: true });
+      gitSync(`worktree add "${wtRoot}" -b ${branch} ${base}`, repoRoot);
+      return wtRoot;
+    }
+    // 이미 있으면 재사용 — 메인의 새 커밋을 흡수(사람이 대화형으로 만든 커밋 등). 충돌 시 abort하고 폴백.
+    try {
+      gitSync(`merge --no-edit ${base}`, wtRoot);
+    } catch {
+      try { gitSync('merge --abort', wtRoot); } catch { /* abort 자체가 실패해도 무시 — 다음 호출에서 재시도 */ }
+      return null; // 충돌 — 이번 태스크는 직접 실행으로 폴백(알림은 여기선 안 함, 정상적인 재시도 흐름)
+    }
+    return wtRoot;
+  } catch {
+    return null; // non-git repoRoot 등 — 폴백
+  }
+}
+
+// 태스크 실행 중 worktree 브랜치에 새 커밋이 생겼으면 메인 브랜치로 ff-only 머지한다.
+//   3분기: ① 메인이 dirty(사람이 대화형 세션에서 편집 중) → 머지 시도조차 하지 않고 조용히 보류(무알림).
+//            사람 작업 중은 정상 상황이지 경보 대상이 아니다 — 워커 커밋은 pcs/<워커> 브랜치에 그대로
+//            보존되니 유실 없고, 다음 태스크 종료 때 메인이 clean해지면 그때 다시 시도해 머지된다.
+//          ② 메인 clean + ff-only 성공 → 메인 최신화.
+//          ③ 메인 clean인데 ff-only 실패(진짜 diverge — 메인에 새 커밋이 생겨 fast-forward 불가) → 브랜치
+//            보존한 채 텔레그램으로 수동 확인 요청.
+//   ★ 실측 재현: 메인이 dirty인 채로 ff-only를 무작정 시도하면 git이 `error: local changes would be
+//   overwritten` + Aborting으로 안전하게 막아준다(사람 작업 데이터 손상 없음) — 하지만 이 exit≠0을
+//   예전 코드가 "diverge 충돌"로 오분류해 불필요한 알림을 보내던 게 이번에 고치는 결함이다.
+// worktree 자체는 지우지 않는다(영속 — session_id --resume이 같은 cwd를 계속 써야 하므로).
+async function mergeBack(repoRoot: string, worktree: string, worker: string, sourceChatId: number | null): Promise<void> {
+  try {
+    const base = gitSync('rev-parse --abbrev-ref HEAD', repoRoot);
+    const branch = `pcs/${worker.replace(/\s+/g, '_')}`;
+    const newCommits = gitSync(`rev-list ${base}..${branch}`, worktree);
+    if (!newCommits) return; // 이번 태스크에서 커밋이 안 생겼으면(코드 수정 없는 태스크 등) 할 일 없음
+
+    // ff-only 시도 전에 메인이 clean한지 먼저 확인 — dirty면 머지를 아예 시도하지 않는다.
+    const dirty = gitSync('status --porcelain', repoRoot);
+    if (dirty) {
+      console.log(`[${worker}] worktree 머지 보류 — 메인이 dirty(사람 작업 중으로 추정). 워커 브랜치(${branch})는 보존됨, 다음 기회에 재시도.`);
+      return; // 조용히 리턴 — 사람이 작업 중인 건 정상 상황이지 경보 대상이 아니다.
+    }
+    try {
+      gitSync(`merge --ff-only ${branch}`, repoRoot);
+      console.log(`[${worker}] worktree → main ff-only 머지 성공`);
+    } catch {
+      // 메인이 clean인데도 ff-only가 실패 = 진짜 diverge(메인에 그 사이 다른 커밋이 생김) — 브랜치 보존, 사람 확인 요청.
+      console.error(`[${worker}] ⚠️ worktree 머지 충돌 — ${branch} 브랜치 수동 확인 필요`);
+      await telegram(sourceChatId, `⚠️ <b>${escHtml(worker)}</b> worktree 머지 충돌 — <code>${escHtml(branch)}</code> 브랜치 수동 확인 필요`);
+    }
+  } catch (e) {
+    console.error(`[${worker}] mergeBack 오류(무시하고 계속)`, e);
+  }
+}
+
 async function runClaudeCode(cmdText: string, a: Agent): Promise<RunResult> {
   // 저장된 세션을 먼저 확인 → 첫 턴인지 이어지는 대화인지 판단
   const { data: cur } = await sb.from('agents').select('session_id, entry').eq('name', a.name).maybeSingle();
   let sid: string | null = cur?.session_id ?? null;
+
+  // ── worktree 격리(PCS_WORKTREE=1) — 옵트인, 실패 시 항상 기존 a.workdir로 폴백 ──────
+  //   플래그가 꺼져 있으면 이 블록은 아무 것도 하지 않는다(execCwd = a.workdir, 기존과 동일).
+  let execCwd = a.workdir || undefined;
+  let worktreePath: string | null = null;
+  if (PCS_WORKTREE && a.kind === 'claude_code' && a.workdir && fs.existsSync(path.join(a.workdir, '.git'))) {
+    worktreePath = ensureWorktree(a.workdir, a.name);
+    if (worktreePath) execCwd = worktreePath; // 성공 시에만 cwd 교체, 실패(null)면 execCwd는 그대로 a.workdir
+  }
 
   // 구독(OAuth) 강제 — 환경의 ANTHROPIC_API_KEY가 끼어들면 claude CLI가 API 모드로 빠진다(401 등).
   // 참고: 운영자 규칙 = LLM은 API 아닌 CLI(구독)로 호출.
@@ -208,16 +304,21 @@ async function runClaudeCode(cmdText: string, a: Agent): Promise<RunResult> {
     );
   };
 
-  let r = await exec('claude', buildArgs(sid), a.workdir || undefined, childEnv, buildPrompt(sid), onLine);
+  let r = await exec('claude', buildArgs(sid), execCwd, childEnv, buildPrompt(sid), onLine);
   // resume 실패(세션 없음 — 예: workdir 변경) → 세션 버리고 새 세션으로 1회 자동 재시도
   if (sid && (!r.ok || /No conversation found|session id/i.test(r.output))) {
     await sb.from('agents').update({ session_id: null }).eq('name', a.name);
     sid = null;
     resultLine = null; progressLog = ''; lastProgressWrite = 0;
-    r = await exec('claude', buildArgs(null), a.workdir || undefined, childEnv, buildPrompt(null), onLine);
+    r = await exec('claude', buildArgs(null), execCwd, childEnv, buildPrompt(null), onLine);
   }
   // (모델 폴백 제거: 기본 모델이 Sonnet 5로 고정돼, 기존 'Opus 한도→Sonnet 강등' 재시도는 무의미해짐.
   //  Sonnet 한도에 막히면 동일 모델 재시도는 효과가 없어 그대로 실패 반환 → 태스크 재시도로 처리.)
+  // worktree를 썼으면(성공적으로 execCwd=worktreePath였으면) 태스크 완료 후 커밋을 메인으로 흡수 시도.
+  // 실패해도(non-git·플래그 off) worktreePath가 null이라 이 블록은 통째로 스킵된다 — 폴백 경로엔 영향 없음.
+  if (worktreePath && a.workdir) {
+    await mergeBack(a.workdir, worktreePath, a.name, current.sourceChatId);
+  }
   if (!r.ok && !resultLine) return r; // result 이벤트조차 못 받았으면(프로세스 자체 실패) 그대로 실패 반환
   try {
     const j = resultLine;
@@ -442,7 +543,7 @@ async function pickAndRun(self: Agent) {
     }
   }
 
-  current.taskId = task.id; current.killed = false;
+  current.taskId = task.id; current.sourceChatId = task.source_chat_id; current.killed = false;
   try {
     await sb.from('tasks').update({ status: 'in_progress' }).eq('id', task.id);
     await sb.from('agents').update({ status: 'working', current_task_id: task.id }).eq('name', NAME);
@@ -492,7 +593,7 @@ ${r.output}`;
     try { await sb.from('tasks').update({ status: 'failed', result: '⚠️ 워커 처리 오류: ' + String(e).slice(0, 300) }).eq('id', task.id); } catch {}
     try { await sb.from('agents').update({ status: 'idle', current_task_id: null }).eq('name', NAME); } catch {}
   } finally {
-    current.taskId = null; current.killed = false;
+    current.taskId = null; current.sourceChatId = null; current.killed = false;
   }
 }
 
@@ -512,7 +613,11 @@ ${r.output}`;
     process.exit(1);
   }
 
-  console.log(`[${NAME}] 워커 기동 · host=${self.host ?? '(무제한)'} · kind=${self.kind} · workdir=${self.workdir ?? '-'}`);
+  console.log(`[${NAME}] 워커 기동 · host=${self.host ?? '(무제한)'} · kind=${self.kind} · workdir=${self.workdir ?? '-'} · worktree=${PCS_WORKTREE ? 'ON' : 'off'}`);
+  // worktree 격리 사용 시 orphan worktree(수동 삭제된 폴더 등) 정리 — 1회, best-effort.
+  if (PCS_WORKTREE && self.workdir) {
+    try { gitSync('worktree prune', self.workdir); } catch { /* non-git workdir 등 — 무시 */ }
+  }
   setInterval(() => heartbeat().catch(console.error), HEARTBEAT_MS);
   setInterval(() => pickAndRun(self as Agent).catch(console.error), POLL_MS);
   setInterval(() => stopWatch().catch(console.error), STOP_POLL_MS);
