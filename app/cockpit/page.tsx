@@ -367,6 +367,11 @@ export default function Cockpit() {
               {[...shownTasks].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).map((t) => (
                 <div className={s.msg} key={t.id}>
                   <div className={s.sent}>{t.command_text}</div>
+                  {t.status === 'in_progress' && t.progress && (
+                    <div className={s.progress}>
+                      <span className={s.progressCursor}>●</span> 진행 중… {t.progress.slice(-500)}
+                    </div>
+                  )}
                   {t.result && <div className={s.recv}>{t.result}</div>}
                   <div className={s.msgMeta}>
                     <span style={{ color: TASK_COLORS[t.status] }}>{TASK_LABELS[t.status] || t.status}</span>

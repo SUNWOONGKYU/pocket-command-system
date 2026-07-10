@@ -44,6 +44,7 @@ export interface Task {
   status: TaskStatus;
   source_chat_id: number | null;
   result: string | null;
+  progress: string | null; // 실행 중 진행 로그 꼬리(claude_code stream-json 파싱, 5초 스로틀) — 종료 후에도 사후 확인용으로 보존
   created_at: string;
   updated_at: string;
 }

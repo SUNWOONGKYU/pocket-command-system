@@ -44,12 +44,16 @@ create table if not exists tasks (
   status           task_status not null default 'queued',
   source_chat_id   bigint,                        -- 결과를 돌려보낼 텔레그램 chat id
   result           text,
+  progress         text,                          -- 실행 중 진행 로그 꼬리(최근 ~1500자) — claude_code stream-json 파싱, 5초 스로틀 갱신
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );
 
 create index if not exists idx_tasks_status on tasks(status);
 create index if not exists idx_tasks_agent  on tasks(assigned_agent);
+
+-- 기존 배포에 컬럼만 추가하는 마이그레이션 (신규 설치는 위 CREATE TABLE에 이미 포함됨)
+alter table if exists tasks add column if not exists progress text;
 
 -- ---------- updated_at 자동 갱신 트리거 ----------
 create or replace function touch_updated_at() returns trigger as $$

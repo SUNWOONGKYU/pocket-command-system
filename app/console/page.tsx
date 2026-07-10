@@ -52,7 +52,7 @@ export default function Console() {
     const seed: Task[] = DEMO_CMDS.map(([who, cmd], i) => ({
       id: uid(), command_text: cmd, assigned_agent: who,
       status: (['queued', 'in_progress', 'done', 'queued'] as TaskStatus[])[i % 4],
-      source_chat_id: null, result: null,
+      source_chat_id: null, result: null, progress: null,
       created_at: new Date(Date.now() - i * 60000).toISOString(),
       updated_at: new Date().toISOString(),
     }));
@@ -75,7 +75,7 @@ export default function Console() {
       if (Math.random() < 0.3 && arr.length < 24) {
         const [who, cmd] = DEMO_CMDS[Math.floor(Math.random() * DEMO_CMDS.length)];
         arr.unshift({ id: uid(), command_text: cmd, assigned_agent: who, status: 'queued',
-          source_chat_id: null, result: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+          source_chat_id: null, result: null, progress: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
       }
       setTasks([...arr]);
     }, 2500);

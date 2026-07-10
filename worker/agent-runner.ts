@@ -64,7 +64,9 @@ const IS_WIN = process.platform === 'win32';
 // ── 공용: 자식 프로세스 실행 (핸들을 current 에 등록해 kill 가능) ──
 // Windows: claude/python 등은 .cmd 셔임이라 shell 경유로만 실행된다(Node가 .cmd를 shell 없이 못 띄움).
 // 이때 인자에 공백·한글이 있어도 깨지지 않도록 직접 따옴표 처리한 단일 커맨드라인을 만든다.
-function exec(cmd: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv, input?: string): Promise<RunResult> {
+//   onStdoutLine: stdout을 줄 단위로 실시간 전달(진행 피드용) — stream-json 파싱은 호출부(runClaudeCode)가 담당.
+//   지정하지 않으면 기존과 동일하게 동작(전체 버퍼링만).
+function exec(cmd: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv, input?: string, onStdoutLine?: (line: string) => void): Promise<RunResult> {
   return new Promise((resolve) => {
     // input이 있으면 stdin을 pipe로 열어 프롬프트를 거기로 보낸다.
     //   ★ Windows 줄바꿈 truncation 방지: 멀티라인 프롬프트를 cmd.exe 명령줄(큰따옴표)에 실으면
@@ -83,9 +85,22 @@ function exec(cmd: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv
     }
     current.child = p;
     let out = '', err = '';
-    p.stdout?.on('data', (d) => (out += d.toString()));
+    let lineBuf = ''; // stdout 청크가 줄 경계에서 안 끊기므로 버퍼링 후 완결된 줄만 콜백에 전달
+    p.stdout?.on('data', (d) => {
+      const s = d.toString();
+      out += s;
+      if (!onStdoutLine) return;
+      lineBuf += s;
+      const parts = lineBuf.split('\n');
+      lineBuf = parts.pop() ?? ''; // 마지막 조각은 아직 미완결 줄일 수 있어 버퍼에 남긴다
+      for (const ln of parts) if (ln.trim()) onStdoutLine(ln);
+    });
     p.stderr?.on('data', (d) => (err += d.toString()));
-    p.on('close', (code) => { current.child = null; resolve({ ok: code === 0, output: (out || err || `exit ${code}`) }); });
+    p.on('close', (code) => {
+      current.child = null;
+      if (onStdoutLine && lineBuf.trim()) onStdoutLine(lineBuf); // 남은 미완결 줄(보통 개행으로 끝나 비어있음) 처리
+      resolve({ ok: code === 0, output: (out || err || `exit ${code}`) });
+    });
     p.on('error', (e) => { current.child = null; resolve({ ok: false, output: String(e) }); });
     if (input != null) {
       try { p.stdin?.write(input); p.stdin?.end(); } catch { /* stdin이 이미 닫혔으면 무시 */ }
@@ -99,6 +114,31 @@ async function runPython(cmdText: string, a: Agent): Promise<RunResult> {
   // Windows는 'python', 그 외는 'python3'
   const py = IS_WIN ? 'python' : 'python3';
   return exec(py, [a.entry, cmdText], a.workdir || undefined);
+}
+
+// stream-json 한 줄(JSONL)에서 진행 로그로 보여줄 짧은 요약 한 줄을 뽑는다.
+//   assistant 이벤트의 content 블록만 본다 — text는 앞 100자, tool_use는 도구별 한줄 요약.
+//   system/user/result 등 다른 타입은 null(진행 로그에 안 쌓음 — result는 별도 처리, user는 tool_result라 노이즈만 큼).
+function summarizeStreamLine(line: string): string | null {
+  let ev: any;
+  try { ev = JSON.parse(line); } catch { return null; } // 파싱 불가 라인은 조용히 무시
+  if (ev?.type !== 'assistant') return null;
+  const blocks: any[] = ev.message?.content;
+  if (!Array.isArray(blocks)) return null;
+  const parts: string[] = [];
+  for (const b of blocks) {
+    if (b.type === 'text' && b.text) {
+      parts.push(String(b.text).slice(0, 100));
+    } else if (b.type === 'tool_use') {
+      const input = b.input || {};
+      let detail = '';
+      if (typeof input.command === 'string') detail = input.command.slice(0, 60);
+      else if (typeof input.file_path === 'string') detail = input.file_path;
+      else if (typeof input.path === 'string') detail = input.path;
+      parts.push(`🔧 ${b.name}${detail ? ': ' + detail : ''}`);
+    }
+  }
+  return parts.length ? parts.join(' ') : null;
 }
 
 async function runClaudeCode(cmdText: string, a: Agent): Promise<RunResult> {
@@ -128,7 +168,9 @@ async function runClaudeCode(cmdText: string, a: Agent): Promise<RunResult> {
       '특히 실거래·매매·주문 관련 코드/설정/상태파일(예: trader.py, 주문·체결 로직, 거래 DB)은 ' +
       '절대 수정·실행하지 말고, 필요하면 읽기·검토만 하라. 작업 폴더 범위 안에서 요청받은 일만 수행하라.';
     const args = [
-      '-p', '--output-format', 'json', '--dangerously-skip-permissions',
+      // json → stream-json 전환: 종료 시까지 깜깜이던 걸 중간 진행(텍스트·도구사용)을 실시간으로 콕핏에 보여주기 위함.
+      // stream-json은 --verbose 없이는 CLI가 에러로 거부한다(실측 확인됨) — 반드시 같이 켠다.
+      '-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions',
       // 워커·감사관 공통 모델 고정 — 기본 Sonnet 5(WORKER_MODEL). 미지정 시 CLI 기본(Opus)이 쓰이던 것을 명시 고정.
       '--model', WORKER_MODEL,
       // PC별로 매번 바뀌는 부분(cwd·git상태 등)을 시스템 프롬프트에서 첫 유저 메시지로 옮겨
@@ -140,23 +182,52 @@ async function runClaudeCode(cmdText: string, a: Agent): Promise<RunResult> {
     return args;
   };
 
-  let r = await exec('claude', buildArgs(sid), a.workdir || undefined, childEnv, buildPrompt(sid));
+  // ── 진행 피드 누적 상태 ────────────────────────────────────────
+  // 누적 로그 전체를 들고 있다가 최근 꼬리 ~1500자만 5초 스로틀로 tasks.progress에 반영한다.
+  // (매 이벤트마다 쓰면 DB 부하 — 실행 태스크 하나당 이벤트가 수십~수백 개 나올 수 있다.)
+  let progressLog = '';
+  let lastProgressWrite = 0;
+  let resultLine: any = null; // 'result' 이벤트(마지막 줄) 캡처 — 최종 파싱은 여기서
+  const taskId = current.taskId; // 이 호출 시작 시점의 taskId(pickAndRun이 adapter 호출 전에 이미 세팅해둠)
+  const PROGRESS_THROTTLE_MS = 5000;
+  const PROGRESS_TAIL = 1500;
+
+  const onLine = (line: string) => {
+    let ev: any;
+    try { ev = JSON.parse(line); } catch { return; } // 파싱 불가 라인은 무시(best-effort)
+    if (ev?.type === 'result') { resultLine = ev; return; } // 최종 결과는 여기서 캡처만, 파싱은 exec 종료 후
+    const summary = summarizeStreamLine(line);
+    if (!summary) return;
+    progressLog += (progressLog ? '\n' : '') + summary;
+    const now = Date.now();
+    if (!taskId || now - lastProgressWrite < PROGRESS_THROTTLE_MS) return;
+    lastProgressWrite = now;
+    const tail = progressLog.slice(-PROGRESS_TAIL);
+    sb.from('tasks').update({ progress: tail }).eq('id', taskId).then(
+      () => {}, () => {} // 실패해도 조용히 무시 — 태스크 실행 방해 금지
+    );
+  };
+
+  let r = await exec('claude', buildArgs(sid), a.workdir || undefined, childEnv, buildPrompt(sid), onLine);
   // resume 실패(세션 없음 — 예: workdir 변경) → 세션 버리고 새 세션으로 1회 자동 재시도
   if (sid && (!r.ok || /No conversation found|session id/i.test(r.output))) {
     await sb.from('agents').update({ session_id: null }).eq('name', a.name);
     sid = null;
-    r = await exec('claude', buildArgs(null), a.workdir || undefined, childEnv, buildPrompt(null));
+    resultLine = null; progressLog = ''; lastProgressWrite = 0;
+    r = await exec('claude', buildArgs(null), a.workdir || undefined, childEnv, buildPrompt(null), onLine);
   }
   // (모델 폴백 제거: 기본 모델이 Sonnet 5로 고정돼, 기존 'Opus 한도→Sonnet 강등' 재시도는 무의미해짐.
   //  Sonnet 한도에 막히면 동일 모델 재시도는 효과가 없어 그대로 실패 반환 → 태스크 재시도로 처리.)
-  if (!r.ok) return r;
+  if (!r.ok && !resultLine) return r; // result 이벤트조차 못 받았으면(프로세스 자체 실패) 그대로 실패 반환
   try {
-    const j = JSON.parse(r.output);
+    const j = resultLine;
+    if (!j) throw new Error('no result event'); // stream-json인데 result 줄이 없으면 폴백 파싱으로
     // 다음 턴을 위해 새 session_id 저장
     if (j.session_id) await sb.from('agents').update({ session_id: j.session_id }).eq('name', a.name);
     return { ok: j.subtype === 'success', output: (j.result || '') }; // 무제한 — 자르지 않음
   } catch {
-    return { ok: true, output: r.output };
+    // stream-json 형식이 예상과 다르거나(구버전 CLI 등) result 이벤트가 없는 경우 — 기존처럼 전체를 그대로 반환
+    return { ok: r.ok, output: r.output };
   }
 }
 
