@@ -97,6 +97,19 @@
 /* 배너의 감사 지적 pill (경고=빨강과 구분되는 호박색) */
 .auditPill { background: rgba(245, 165, 36, 0.08); border-color: rgba(245, 165, 36, 0.42); color: #f5a524; }
 
+/* 감사 diff 접기/펼치기 — command_text에 이미 실려온 diff를 그대로 라인별 렌더(서버 git 호출 없음) */
+.diffToggle { margin-top: 7px; font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 0; }
+.diffToggle:hover { color: var(--brand); }
+.diffMeta { font-family: var(--mono); font-size: 10px; color: var(--text-faint); margin-bottom: 5px; }
+.diffTruncated { color: #f5a524; }
+.diffPanel { margin-top: 6px; background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 9px; }
+.diffBody { font-family: var(--mono); font-size: 10.5px; line-height: 1.5; max-height: 320px; overflow-y: auto; overflow-x: auto; white-space: pre; }
+.diffAdd { color: #00ff9c; background: rgba(0, 255, 156, 0.06); }
+.diffDel { color: #ff6b8c; background: rgba(255, 59, 107, 0.06); }
+.diffHunk { color: #00e5ff; opacity: 0.85; }
+.diffCtx { color: var(--text-dim); }
+
 /* 통합 섹션 — 미분류 에이전트 + 태스크(콘솔 흡수) */
 .pip { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
 .section { margin-top: 20px; border-top: 1px solid var(--line-soft); padding-top: 14px; }

@@ -31,6 +31,28 @@ function classifyAudit(text?: string | null): { label: string; warn: boolean } |
   return { label: '완료', warn: false };
 }
 
+// 감사 태스크 command_text에서 diff 블록을 추출한다.
+//   enqueue-audit.js가 만드는 프롬프트 포맷(고정): '[변경 내용]' 또는 '[변경 내용 (앞부분만)]' 다음 줄부터
+//   빈 줄 하나를 사이에 두고 "너는 '<감사관명>'이다." 문단이 시작되기 직전까지가 diff 전체다.
+//   서버 git 호출 없이 이미 태스크에 실려온 텍스트만 파싱한다(순수 프론트).
+function extractAuditDiff(commandText?: string | null): { diff: string; truncated: boolean; commit: string | null; added: number; removed: number } | null {
+  if (!commandText) return null;
+  const m = commandText.match(/\[변경 내용([^\]]*)\]\r?\n([\s\S]*?)\r?\n\n너는 '/);
+  if (!m || !m[2].trim()) return null;
+  const truncated = /앞부분만/.test(m[1]);
+  const diff = m[2];
+  const commitMatch = commandText.match(/^커밋:\s*(\S+)/m);
+  const commit = commitMatch ? commitMatch[1].slice(0, 8) : null;
+  // 대략적인 +/- 라인 카운트 — diff 메타(+++/---  헤더)는 제외하고 실제 변경 라인만.
+  let added = 0, removed = 0;
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---')) continue;
+    if (line.startsWith('+')) added++;
+    else if (line.startsWith('-')) removed++;
+  }
+  return { diff, truncated, commit, added, removed };
+}
+
 // 구독 사용량 게이지 — stale(10분 이상 미갱신)이면 표시하지 않는다(오판 방지).
 function usageGauge(a: Agent | null, now: number): { text: string; color: string } | null {
   const u = a?.usage_state;
@@ -53,6 +75,7 @@ export default function Cockpit() {
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [pending, setPending] = useState<{ id: string; text: string; agent: string; failed?: boolean }[]>([]);
+  const [diffOpen, setDiffOpen] = useState<Set<string>>(new Set()); // "diff 보기" 펼침 상태 — 카드(프로젝트 id)별 로컬
   const [live, setLive] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
@@ -285,6 +308,8 @@ export default function Cockpit() {
             const last = wtasks[0];
             const lastAudit = p.auditor ? tasks.find((t) => t.assigned_agent === p.auditor) : undefined;
             const verdict = classifyAudit(lastAudit?.result || lastAudit?.command_text);
+            const auditDiff = extractAuditDiff(lastAudit?.command_text);
+            const diffIsOpen = diffOpen.has(p.id);
             const gauge = usageGauge(w, now);
             return (
               <div
@@ -328,6 +353,41 @@ export default function Cockpit() {
                   <div className={`${s.audit} ${verdict.warn ? s.auditWarn : verdict.label === '정상' ? s.auditOk : s.auditNeutral}`}>
                     🛡 감사 {verdict.warn ? '⚠ ' : ''}{verdict.label}
                   </div>
+                )}
+                {auditDiff && (
+                  <>
+                    <button
+                      className={s.diffToggle}
+                      onClick={(e) => {
+                        e.stopPropagation(); // 카드 클릭(프로젝트 선택)과 분리
+                        setDiffOpen((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(p.id)) next.delete(p.id); else next.add(p.id);
+                          return next;
+                        });
+                      }}
+                    >
+                      diff 보기 {diffIsOpen ? '▴' : '▾'}
+                    </button>
+                    {diffIsOpen && (
+                      <div className={s.diffPanel} onClick={(e) => e.stopPropagation()}>
+                        <div className={s.diffMeta}>
+                          {auditDiff.commit && <>커밋 {auditDiff.commit}</>}
+                          {auditDiff.truncated && <span className={s.diffTruncated}> · 일부</span>}
+                          <span> · +{auditDiff.added}/-{auditDiff.removed}줄</span>
+                        </div>
+                        <div className={s.diffBody}>
+                          {auditDiff.diff.split('\n').map((line, i) => {
+                            const cls = line.startsWith('+') ? s.diffAdd
+                              : line.startsWith('-') ? s.diffDel
+                              : line.startsWith('@@') ? s.diffHunk
+                              : s.diffCtx;
+                            return <div key={i} className={cls}>{line || ' '}</div>;
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
                 {last && (
                   <div className={s.last}>
