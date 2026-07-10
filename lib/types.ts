@@ -22,8 +22,20 @@ export interface Agent {
   current_task_id: string | null;
   last_heartbeat_at: string | null;
   beats: number;
+  usage_state: UsageState | null;
   updated_at: string;
 }
+
+// claude_code 워커의 구독 사용량(rate limit) 스냅샷 — 워커가 60초 주기로 Anthropic OAuth usage 엔드포인트를 조회해 채운다.
+export interface UsageState {
+  five_hour: { pct: number; resets_at: string | null };
+  seven_day: { pct: number; resets_at: string | null };
+  severity: 'normal' | 'warning' | 'critical' | string;
+  fetched_at: string;
+  alerted_for_reset?: string; // 텔레그램 중복경고 방지 — 이 resets_at에 대해 이미 알렸으면 재알림 안 함
+}
+
+export const USAGE_STALE_SEC = 600; // 이보다 오래된 fetched_at은 표시 생략(stale 오판 방지)
 
 export interface Task {
   id: string;

@@ -82,6 +82,13 @@
   padding: 10px 16px; border-radius: 999px; font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,0.4); }
 .toast.err { border-color: #ff3b6b; color: #ff6b8c; }
 
+/* 구독 사용량(rate limit) 게이지 칩 — 카드 metrics 아래, 색은 severity로(normal=무채색/warning=amber/critical=red) */
+.usage { margin-top: 8px; font-family: var(--mono); font-size: 10.5px;
+  background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 7px; padding: 4px 8px;
+  display: inline-block; }
+/* 배너의 사용량 경고 pill (감사 지적=호박색과 톤 맞추되 아이콘으로 구분) */
+.usagePill { background: rgba(245, 165, 36, 0.08); border-color: rgba(245, 165, 36, 0.42); color: #f5a524; }
+
 /* 감사 결과 가시화 */
 .audit { margin-top: 8px; font-size: 11px; display: flex; align-items: center; gap: 5px; font-family: var(--mono); }
 .auditOk { color: #00ff9c; }

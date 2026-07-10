@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase';
-import { Agent, Task, deriveStatus, STATUS_META } from '@/lib/types';
+import { Agent, Task, deriveStatus, STATUS_META, USAGE_STALE_SEC } from '@/lib/types';
 import cfg from '@/config/projects.json';
 import s from './cockpit.module.css';
 
@@ -29,6 +29,19 @@ function classifyAudit(text?: string | null): { label: string; warn: boolean } |
   if (/\[(필수|주의|중대|치명|major|critical)\]|결함|위반|불합격|누락 발견|취약점|🔴|\bFail\b|\bDanger\b/i.test(text))
     return { label: '지적', warn: true };
   return { label: '완료', warn: false };
+}
+
+// 구독 사용량 게이지 — stale(10분 이상 미갱신)이면 표시하지 않는다(오판 방지).
+function usageGauge(a: Agent | null, now: number): { text: string; color: string } | null {
+  const u = a?.usage_state;
+  if (!u?.fetched_at) return null;
+  const ageSec = (now - new Date(u.fetched_at).getTime()) / 1000;
+  if (ageSec > USAGE_STALE_SEC) return null;
+  const color = u.severity === 'critical' ? '#ff3b6b' : u.severity === 'warning' ? '#f5a524' : 'var(--text-dim)';
+  const resetTime = u.five_hour?.resets_at
+    ? new Date(u.five_hour.resets_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+    : '—';
+  return { text: `5h ${u.five_hour?.pct ?? 0}% · 리셋 ${resetTime} · 주 ${u.seven_day?.pct ?? 0}%`, color };
 }
 
 export default function Cockpit() {
@@ -191,6 +204,26 @@ export default function Cockpit() {
     return v?.warn ? { label: p.label } : null;
   }).filter(Boolean) as { label: string }[];
 
+  // 구독 사용량 경고 배너 — 80% 이상인 호스트(같은 계정 = 같은 사용량이라 host당 1번만)
+  const usageAlerts = (() => {
+    const seenHost = new Set<string>();
+    const out: { host: string; pct: number; resetTime: string }[] = [];
+    for (const a of agents) {
+      const u = a.usage_state;
+      if (!u?.fetched_at || !a.host) continue;
+      const ageSec = (now - new Date(u.fetched_at).getTime()) / 1000;
+      if (ageSec > USAGE_STALE_SEC) continue;
+      const pct = u.five_hour?.pct ?? 0;
+      if (pct < 80 || seenHost.has(a.host)) continue;
+      seenHost.add(a.host);
+      const resetTime = u.five_hour?.resets_at
+        ? new Date(u.five_hour.resets_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+        : '—';
+      out.push({ host: a.host, pct, resetTime });
+    }
+    return out;
+  })();
+
   return (
     <div className="console-shell">
       <header className="bar">
@@ -218,7 +251,7 @@ export default function Cockpit() {
           </div>
         )}
 
-        {(alerts.length > 0 || auditAlerts.length > 0) && (
+        {(alerts.length > 0 || auditAlerts.length > 0 || usageAlerts.length > 0) && (
           <div className={s.banner}>
             {alerts.map((a) => (
               <span className={s.bannerItem} key={'w-' + a.label}>
@@ -229,6 +262,11 @@ export default function Cockpit() {
             {auditAlerts.map((a) => (
               <span className={`${s.bannerItem} ${s.auditPill}`} key={'a-' + a.label}>
                 🛡 {a.label} — 감사 지적
+              </span>
+            ))}
+            {usageAlerts.map((a) => (
+              <span className={`${s.bannerItem} ${s.usagePill}`} key={'u-' + a.host}>
+                ⚠ {a.host} 구독 사용량 {a.pct}% — {a.resetTime} 리셋
               </span>
             ))}
           </div>
@@ -247,6 +285,7 @@ export default function Cockpit() {
             const last = wtasks[0];
             const lastAudit = p.auditor ? tasks.find((t) => t.assigned_agent === p.auditor) : undefined;
             const verdict = classifyAudit(lastAudit?.result || lastAudit?.command_text);
+            const gauge = usageGauge(w, now);
             return (
               <div
                 key={p.id}
@@ -274,6 +313,11 @@ export default function Cockpit() {
                   <span className={s.metric}>진행 <b>{running}</b></span>
                   <span className={s.metric}>♥ {w ? w.beats.toLocaleString() : 0}</span>
                 </div>
+                {gauge && (
+                  <div className={s.usage} style={{ color: gauge.color, borderColor: gauge.color + '55' }}>
+                    {gauge.text}
+                  </div>
+                )}
                 <div className={s.ekg} data-state={wst || 'offline'}>
                   <svg viewBox="0 0 240 26" preserveAspectRatio="none">
                     <path className={s.trace} d={wst && wst !== 'offline' && wst !== 'error' ? EKG_TRACE : EKG_FLAT}

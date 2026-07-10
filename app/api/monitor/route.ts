@@ -26,6 +26,13 @@ export async function GET() {
   const alertChat = process.env.TELEGRAM_ALERT_CHAT_ID;
   const flagged: string[] = [];
 
+  // 구독 사용량(rate limit) 경고 — host당 1회로 묶어서 발송(같은 host=같은 계정=같은 사용량).
+  // key=host, 그 host의 워커 이름들 + 대표 usage_state(가장 높은 pct)를 모은다.
+  //   ★ alerted는 대표 row 1개가 아니라 '그 host의 어느 row든' alerted_for_reset이 이번 resetsAt과 일치하면
+  //   매칭으로 본다 — 동률/근사 pct일 때 select 순서에 따라 대표가 바뀌면 그 row엔 플래그가 없어 재경고가
+  //   나가던 문제 방지. 발송 후에도 host의 모든 워커 row에 플래그를 기록한다(아래 두 번째 루프).
+  const usageByHost = new Map<string, { names: string[]; pct: number; resetsAt: string; alerted: boolean }>();
+
   for (const a of agents as Agent[]) {
     if (a.kind === 'orchestrator') continue; // 허실장 등 오케스트레이터는 워커가 없어 하트비트 없음 — 감시 제외
     const lastBeat = a.last_heartbeat_at ? new Date(a.last_heartbeat_at).getTime() : 0;
@@ -44,6 +51,41 @@ export async function GET() {
       if (sinceUpdate > STUCK_TIMEOUT_SEC) {
         flagged.push(`🟡 ${a.name} 작업 정체 (${Math.round(sinceUpdate)}s)`);
       }
+    }
+
+    // 구독 사용량(rate limit) — warning(80%) 이상인 워커를 host별로 모아둔다(발송은 루프 밖에서 host당 1회).
+    const u = a.usage_state as { five_hour?: { pct: number; resets_at: string | null }; alerted_for_reset?: string } | null;
+    if (u?.five_hour && (u.five_hour.pct ?? 0) >= 80 && a.host) {
+      const resetsAt = u.five_hour.resets_at || '';
+      const entry = usageByHost.get(a.host);
+      const alreadyAlerted = !!(u.alerted_for_reset && u.alerted_for_reset === resetsAt);
+      if (!entry || u.five_hour.pct > entry.pct) {
+        usageByHost.set(a.host, {
+          names: entry ? [...entry.names, a.name] : [a.name],
+          pct: u.five_hour.pct,
+          resetsAt,
+          alerted: (entry?.alerted ?? false) || alreadyAlerted,
+        });
+      } else {
+        entry.names.push(a.name);
+        entry.alerted = entry.alerted || alreadyAlerted;
+      }
+    }
+  }
+
+  // host별로 새로 80% 이상 진입했을 때만 1회 경고 + 그 host의 모든 워커 row에 alerted_for_reset 기록.
+  for (const [host, info] of usageByHost) {
+    if (info.alerted) continue; // 이 host의 어느 워커든 이미 이 리셋 주기에 대해 알림 — 중복 방지(리셋 지나면 resetsAt이 바뀌어 다시 알림)
+    const resetTime = info.resetsAt
+      ? new Date(info.resetsAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+      : '—';
+    flagged.push(`⚠️ ${host} 구독 사용량 ${info.pct}% (5h 윈도) — ${resetTime} 리셋. 워커: ${info.names.join(', ')}`);
+    // 대표 1개가 아니라 이 host의 모든 워커 row에 플래그를 남겨야, 다음 cron에서 어느 row가 먼저 잡히든 안전하다.
+    for (const a of agents as Agent[]) {
+      if (a.host !== host) continue;
+      await supabase.from('agents')
+        .update({ usage_state: { ...(a.usage_state ?? {}), alerted_for_reset: info.resetsAt } })
+        .eq('id', a.id);
     }
   }
 

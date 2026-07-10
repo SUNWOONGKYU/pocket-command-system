@@ -29,8 +29,12 @@ create table if not exists agents (
   current_task_id  uuid,
   last_heartbeat_at timestamptz,                  -- ★ 농땡이/오프라인 판정 기준
   beats            bigint not null default 0,     -- 누적 하트비트 수(EKG 펄스용)
+  usage_state      jsonb,                         -- claude_code 워커의 구독 사용량(5h/7d) 스냅샷 — 60초 주기 갱신
   updated_at       timestamptz not null default now()
 );
+
+-- 기존 배포에 컬럼만 추가하는 마이그레이션 (신규 설치는 위 CREATE TABLE에 이미 포함됨)
+alter table if exists agents add column if not exists usage_state jsonb;
 
 -- ---------- tasks : 업무 지시 큐 ----------
 create table if not exists tasks (
