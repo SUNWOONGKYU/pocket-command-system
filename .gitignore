@@ -27,6 +27,7 @@ yarn-error.log*
 
 # 에이전트 작업 폴더(레포 내부 — claude 세션 로그 등 추적 제외)
 /_agentwork/
+/_bizwork/
 
 # 원본 빌드 스냅샷 zip (docs의 지시서·프리뷰는 추적, zip은 중복이라 제외)
 docs/*.zip
@@ -50,3 +51,7 @@ docs/데몬워커-편제-운영지식.md
 # 운영 실데이터(프로젝트 실명·워커 편제·감사 기준) — 공개본엔 config/*.json의 일반화 예시만 tracked.
 # 실데이터는 *.local.json으로 두면 서버(app/api/projects)·enqueue-audit.js가 우선 읽는다.
 /config/*.local.json
+
+# 운영 전용 스크립트·로컬 목록 (실PC명·실경로·팀 상세 — 공개본 제외)
+/scripts/_ops/
+scripts/*.local.txt

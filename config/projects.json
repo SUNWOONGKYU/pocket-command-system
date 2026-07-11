@@ -1,7 +1,13 @@
 {
-  "_comment": "콕핏 프로젝트 매핑 예시 — 공개본 기본값. 실제 운영 데이터는 config/projects.local.json(gitignore)에 두면 그쪽이 우선 사용된다. worker/auditor는 agents.name과 정확히 일치해야 함. label은 카드 표시명. git은 경영 계층(최근 커밋) 표시용(선택).",
+  "_comment": "콕핏 프로젝트 매핑 예시 — 공개본 기본값. 실제 운영 데이터는 config/projects.local.json(gitignore)에 두면 그쪽이 우선 사용된다. worker/auditor는 agents.name과 정확히 일치해야 함. label은 카드 표시명. git은 경영 계층(최근 커밋) 표시용(선택). team[]은 개발쌍(worker+auditor) 외 추가 역할(사업팀 등)을 카드에 로스터로 표시하는 선택 필드 — 각 name은 agents.name과 일치, model:'opus'면 상위모델 표식(⬥).",
   "projects": [
     { "id": "project-a", "label": "Project A", "worker": "Worker 1", "auditor": "Worker 1 Auditor", "git": "" },
-    { "id": "project-b", "label": "Project B", "worker": "Worker 2", "auditor": "Worker 2 Auditor", "git": "" }
+    { "id": "project-b", "label": "Project B", "worker": "Worker 2", "auditor": "Worker 2 Auditor", "git": "" },
+    { "id": "biz-example", "label": "Business Unit (example)", "worker": "Dev 1", "auditor": "Dev 1 Auditor", "git": "",
+      "team": [
+        { "name": "COO 1", "role": "Ops", "model": "opus" },
+        { "name": "CMO 1", "role": "Marketing" },
+        { "name": "CFO 1", "role": "Finance" }
+      ] }
   ]
 }

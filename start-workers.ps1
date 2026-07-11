@@ -27,12 +27,22 @@ if (-not (Test-Path $listFile)) {
 $names = @(Get-Content -Path $listFile -Encoding UTF8 | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
 if ($names.Count -eq 0) { Write-Host "이 PC로 등록된 워커가 없습니다 (DB host 값 확인)."; return }
 
+# 상위모델(Opus) 지정 워커 — 감사관은 agent-runner가 이름('감사관')으로 자동 Opus.
+# 그 외 전략역할(예: 사업총괄)은 여기서 CLAUDE_MODEL 을 명시해 상위모델로 띄운다.
+# 대상 이름은 운영 데이터라 추적 파일에 박지 않고 gitignored 로컬 목록에서 읽는다(공개본 분리).
+#   scripts/opus-workers.local.txt — 한 줄에 워커 이름 하나(없으면 감사관만 Opus).
+$opusListFile = Join-Path $PSScriptRoot "scripts/opus-workers.local.txt"
+$opusWorkers = if (Test-Path $opusListFile) {
+  @(Get-Content -Path $opusListFile -Encoding UTF8 | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+} else { @() }
+
 foreach ($name in $names) {
   $safe = ($name -replace '\s', '_')
   $log = Join-Path $logDir ("worker_" + $safe + ".log")
   Write-Host "  -> $name"
   # 이름은 환경변수로 전달 — 공백 있는 이름이 argv에서 쪼개지는 버그 회피.
   $env:AGENT_NAME = $name
+  if ($opusWorkers -contains $name) { $env:CLAUDE_MODEL = 'claude-opus-4-8' } else { $env:CLAUDE_MODEL = $null }
   Start-Process -FilePath "node" `
     -ArgumentList "--import", "tsx", "worker/agent-runner.ts" `
     -WindowStyle Hidden `
@@ -40,5 +50,6 @@ foreach ($name in $names) {
     -RedirectStandardError ($log + ".err")
   Start-Sleep -Milliseconds 500
   $env:AGENT_NAME = $null
+  $env:CLAUDE_MODEL = $null
 }
 Write-Host "완료. 워커 $($names.Count)개 기동: $($names -join ', ')"

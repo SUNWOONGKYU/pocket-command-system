@@ -9,7 +9,8 @@ import { createBrowserClient } from '@/lib/supabase';
 import { Agent, Task, deriveStatus, STATUS_META, USAGE_STALE_SEC } from '@/lib/types';
 import s from './cockpit.module.css';
 
-type Proj = { id: string; label: string; worker: string; auditor: string; git: string };
+type TeamMember = { name: string; role: string; model?: string };
+type Proj = { id: string; label: string; worker: string; auditor: string; git: string; team?: TeamMember[] };
 // ★ 운영 실데이터(프로젝트 실명·워커 편제)를 클라이언트 번들에 안 박기 위해 정적 import 대신
 //   /api/projects에서 서버(Node fs)로만 읽어 fetch한다 — config/projects.json 직접 import 금지.
 //   공개 clone엔 projects.local.json 자체가 없어 서버가 예시(config/projects.json)로 자동 폴백한다.
@@ -198,7 +199,7 @@ export default function Cockpit() {
   }
 
   // 미분류: projects.json에 없는 에이전트 (새 워커도 절대 안 숨김 — 관제 보드 흡수)
-  const mappedNames = new Set(PROJECTS.flatMap((p) => [p.worker, p.auditor].filter(Boolean)));
+  const mappedNames = new Set(PROJECTS.flatMap((p) => [p.worker, p.auditor, ...(p.team?.map((m) => m.name) ?? [])].filter(Boolean)));
   const unmapped = agents.filter((a) => !mappedNames.has(a.name));
   // 태스크 섹션: 프로젝트 선택 시 그 워커 것만(감사관 제외 — 채팅은 워커와만, 감사는 자동 전용),
   //   미선택 시 전체(콘솔 흡수)
@@ -343,6 +344,20 @@ export default function Cockpit() {
                       {audSt ? STATUS_META[audSt].label : '—'}</b></>
                   ) : <span style={{ color: 'var(--text-faint)' }}>감사관 없음</span>}
                 </div>
+                {p.team && p.team.length > 0 && (
+                  <div className={s.chips} style={{ marginTop: 4, marginBottom: 2 }}>
+                    {p.team.map((m) => {
+                      const ta = byName(m.name);
+                      const tst = ta ? deriveStatus(ta, now) : null;
+                      const c = tst ? STATUS_META[tst].color : '#3a3a3a';
+                      return (
+                        <span className={s.chip} key={m.name} style={{ borderColor: c + '55' }} title={`${m.name} · ${m.role}`}>
+                          <span className={s.pip} style={{ background: c }} />{m.role}{m.model === 'opus' ? ' ⬥' : ''}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className={s.metrics}>
                   <span className={s.metric}>대기 <b>{queued}</b></span>
                   <span className={s.metric}>진행 <b>{running}</b></span>
