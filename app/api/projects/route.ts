@@ -18,11 +18,21 @@ export async function GET() {
   const examplePath = path.join(dir, 'projects.json');
 
   try {
-    const raw = fs.existsSync(localPath)
-      ? fs.readFileSync(localPath, 'utf8')
-      : fs.readFileSync(examplePath, 'utf8');
-    const json = JSON.parse(raw);
-    return NextResponse.json({ ok: true, projects: json.projects ?? [] });
+    // 우선순위: ① Vercel 환경변수 PCS_PROJECTS_JSON (호스팅 서버엔 운영 실데이터를
+    //   env로 주입 — gitignored 로컬 파일은 배포에 안 올라가므로) → ② 로컬 실데이터 파일
+    //   (개발자 PC의 콕핏) → ③ 공개본 예시. env는 { "projects": [...] } 또는 [...] 둘 다 허용.
+    const envRaw = process.env.PCS_PROJECTS_JSON;
+    let json: any;
+    if (envRaw && envRaw.trim()) {
+      json = JSON.parse(envRaw);
+    } else {
+      const raw = fs.existsSync(localPath)
+        ? fs.readFileSync(localPath, 'utf8')
+        : fs.readFileSync(examplePath, 'utf8');
+      json = JSON.parse(raw);
+    }
+    const projects = Array.isArray(json) ? json : (json.projects ?? []);
+    return NextResponse.json({ ok: true, projects });
   } catch (e) {
     console.error('[api/projects] 로드 실패', e);
     return NextResponse.json({ ok: false, projects: [], error: '프로젝트 설정을 읽을 수 없습니다' }, { status: 500 });
