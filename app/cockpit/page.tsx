@@ -74,6 +74,7 @@ export default function Cockpit() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [now, setNow] = useState(Date.now());
   const [sel, setSel] = useState<string | null>(null); // 선택된 프로젝트 id
+  const [selAgent, setSelAgent] = useState<string | null>(null); // 프로젝트 내 명령 대상(팀원 선택 시 override, null=워커)
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
@@ -163,11 +164,15 @@ export default function Cockpit() {
   }
 
   const selProj = PROJECTS.find((p) => p.id === sel) || null;
+  // 명령 대상 후보: 워커 + 팀원(감사관 제외 — 감사는 자동 전용이라 대화 대상 아님).
+  const cmdTargets = selProj ? [selProj.worker, ...(selProj.team?.map((m) => m.name) ?? [])].filter(Boolean) : [];
+  // 실제 명령 대상: 팀원을 골랐으면 그 이름, 아니면 워커.
+  const activeAgent = selProj ? ((selAgent && cmdTargets.includes(selAgent)) ? selAgent : selProj.worker) : null;
 
   async function sendCommand() {
-    if (!selProj || !text.trim()) return;
+    if (!selProj || !activeAgent || !text.trim()) return;
     const body = text.trim();
-    const worker = selProj.worker;
+    const worker = activeAgent;
     // 낙관적 표시: 보내는 즉시 내 말풍선을 대화에 띄우고 유지 (서버 반영 전까지 '전송중')
     const optId = 'opt-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
     setPending((prev) => [...prev, { id: optId, text: body, agent: worker }]);
@@ -175,7 +180,7 @@ export default function Cockpit() {
     if (inputRef.current) inputRef.current.style.height = 'auto';
     inputRef.current?.focus();
     // 전송 실패 시 낙관적 말풍선을 '전송 실패'로 마킹(무기한 '전송중' 잔존 방지). 성공 시 태스크 도착 dedup가 제거.
-    const ok = await post(worker, { text: body }, `▶ ${selProj.label}에게 전송`);
+    const ok = await post(worker, { text: body }, `▶ ${worker}에게 전송`);
     if (!ok) setPending((prev) => prev.map((p) => (p.id === optId ? { ...p, failed: true } : p)));
   }
 
@@ -204,12 +209,12 @@ export default function Cockpit() {
   // 태스크 섹션: 프로젝트 선택 시 그 워커 것만(감사관 제외 — 채팅은 워커와만, 감사는 자동 전용),
   //   미선택 시 전체(콘솔 흡수)
   const shownTasks = selProj
-    ? tasks.filter((t) => t.assigned_agent === selProj.worker)
+    ? tasks.filter((t) => t.assigned_agent === activeAgent)
     : tasks.slice(0, 30);
 
   // 대화 열기·전송·새 메시지 도착(텔레그램 포함)·독 높이 변화 시 맨 아래(최신)로 스크롤 — 방금 보낸/도착한 글이 항상 보이게.
   // 고정 타이머(70ms) 대신 레이아웃 반영 후(rAF 2회) 스크롤해, 새 말풍선의 실제 높이가 반영된 뒤 정확히 바닥으로 간다.
-  const chatSig = `${sel}|${pending.length}|${shownTasks.length}|${dockH}`;
+  const chatSig = `${sel}|${selAgent}|${pending.length}|${shownTasks.length}|${dockH}`;
   useEffect(() => {
     if (!sel) return;
     let raf2 = 0;
@@ -326,7 +331,7 @@ export default function Cockpit() {
               <div
                 key={p.id}
                 className={sel === p.id ? `${s.card} ${s.cardSel}` : s.card}
-                onClick={() => { setSel(p.id); setTimeout(() => inputRef.current?.focus(), 50); }}
+                onClick={() => { setSel(p.id); setSelAgent(null); setTimeout(() => inputRef.current?.focus(), 50); }}
               >
                 <div className={s.cardHead}>
                   <span className={s.label}>{p.label}</span>
@@ -350,8 +355,15 @@ export default function Cockpit() {
                       const ta = byName(m.name);
                       const tst = ta ? deriveStatus(ta, now) : null;
                       const c = tst ? STATUS_META[tst].color : '#3a3a3a';
+                      const activeChip = sel === p.id && selAgent === m.name;
                       return (
-                        <span className={s.chip} key={m.name} style={{ borderColor: c + '55' }} title={`${m.name} · ${m.role}`}>
+                        <span
+                          className={s.chip}
+                          key={m.name}
+                          style={{ borderColor: c + '55', cursor: 'pointer', background: activeChip ? c + '22' : undefined, outline: activeChip ? `1px solid ${c}` : undefined }}
+                          title={`${m.name} · ${m.role} — 탭하면 이 역할에게 지시`}
+                          onClick={(e) => { e.stopPropagation(); setSel(p.id); setSelAgent(m.name); setTimeout(() => inputRef.current?.focus(), 50); }}
+                        >
                           <span className={s.pip} style={{ background: c }} />{m.role}{m.model === 'opus' ? ' ⬥' : ''}
                         </span>
                       );
@@ -444,9 +456,30 @@ export default function Cockpit() {
           // 텔레그램식 대화 — 명령=보낸 말풍선, 결과=받은 말풍선
           <div className={s.chat}>
             <div className={s.chatHead}>
-              <span>💬 <b>{selProj.label}</b> · {selProj.worker}</span>
-              <button className={s.linkBtn} onClick={() => setSel(null)}>← 전체</button>
+              <span>💬 <b>{selProj.label}</b> · {activeAgent}</span>
+              <button className={s.linkBtn} onClick={() => { setSel(null); setSelAgent(null); }}>← 전체</button>
             </div>
+            {cmdTargets.length > 1 && (
+              <div className={s.chips} style={{ padding: '4px 2px 8px' }}>
+                {cmdTargets.map((name) => {
+                  const ta = byName(name);
+                  const tst = ta ? deriveStatus(ta, now) : null;
+                  const c = tst ? STATUS_META[tst].color : '#3a3a3a';
+                  const active = activeAgent === name;
+                  const isWorker = name === selProj.worker;
+                  return (
+                    <span
+                      className={s.chip}
+                      key={name}
+                      style={{ borderColor: c + '55', cursor: 'pointer', background: active ? c + '22' : undefined, outline: active ? `1px solid ${c}` : undefined }}
+                      onClick={() => { setSelAgent(isWorker ? null : name); setTimeout(() => inputRef.current?.focus(), 50); }}
+                    >
+                      <span className={s.pip} style={{ background: c }} />{name}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
             <div className={s.thread}>
               {shownTasks.length === 0 && pending.length === 0 && <div className={s.taskEmpty}>대화가 없습니다. 아래에서 첫 명령을 보내세요.</div>}
               {[...shownTasks].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).map((t) => (
@@ -466,7 +499,7 @@ export default function Cockpit() {
                   </div>
                 </div>
               ))}
-              {pending.filter((p) => p.agent === selProj.worker).map((p) => (
+              {pending.filter((p) => p.agent === activeAgent).map((p) => (
                 <div className={s.msg} key={p.id}>
                   <div className={s.sent}>{p.text}</div>
                   <div className={s.msgMeta}>{p.failed
@@ -512,11 +545,11 @@ export default function Cockpit() {
             <>
               <div className={s.quick}>
                 <button className={`${s.qbtn} ${s.danger}`} disabled={sending}
-                  onClick={() => post(selProj.worker, { control: 'stop' }, `${selProj.label} 급정지`)}>급정지</button>
+                  onClick={() => post(activeAgent!, { control: 'stop' }, `${activeAgent} 급정지`)}>급정지</button>
                 <button className={s.qbtn} disabled={sending}
-                  onClick={() => post(selProj.worker, { control: 'run' }, `${selProj.label} 재가동`)}>재가동</button>
+                  onClick={() => post(activeAgent!, { control: 'run' }, `${activeAgent} 재가동`)}>재가동</button>
                 <button className={`${s.qbtn} ${s.danger}`} disabled={sending}
-                  onClick={() => post(selProj.worker, { control: 'terminate' }, `${selProj.label} 작업 종료`)}>종료</button>
+                  onClick={() => post(activeAgent!, { control: 'terminate' }, `${activeAgent} 작업 종료`)}>종료</button>
               </div>
               <div className={s.composer}>
                 <textarea
