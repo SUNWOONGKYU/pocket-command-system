@@ -328,8 +328,8 @@ ANTHROPIC_API_KEY=...                 # 선택 — 없으면 키워드 규칙으
 ### 6단계 — 워커(일꾼) 띄우기 — 일 시킬 PC마다
 각 PC에 ① claude CLI(구독 로그인 완료) ② Node ③ 이 저장소 클론을 준비한 뒤:
 ```bash
-AGENT_NAME=알파조 npm run worker
-AGENT_NAME=정화백 npm run worker
+AGENT_NAME=알파 npm run worker
+AGENT_NAME=브라보 npm run worker
 # 필요한 워커 수만큼 (PM2(프로세스 관리 도구)나 셸 루프로 일괄 가능)
 ```
 - **로그온 시 자동 기동**: `install-autostart.ps1` 실행(작업 스케줄러 등록).

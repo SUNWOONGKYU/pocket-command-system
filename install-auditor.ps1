@@ -1,5 +1,5 @@
 ﻿# 프로젝트 repo에 감사관 파이프라인 설치 (PC·repo당 1회).
-#   사용:  .\install-auditor.ps1 -Project DID_system -RepoPath C:\Dev\DID_system
+#   사용:  .\install-auditor.ps1 -Project project-a -RepoPath C:\Dev\project-a
 # 하는 일: (1) repo 안 _audit\ 폴더 생성 (2) .gitignore 에 _audit/ 등록(커밋 금지=재귀 방지)
 #          (3) .git/hooks/post-commit 설치 -> 커밋 시 enqueue-audit.js <Project> 호출
 # 폴더명은 ASCII '_audit' (PowerShell 5.1 한글 경로 오독 회피). 로그 파일(감사이력.md 등)은 claude가 한글로 작성.

@@ -13,13 +13,11 @@ const COLS: { key: TaskStatus; label: string; color: string }[] = [
 ];
 
 const DEMO_CMDS: [string, string][] = [
-  ['알파조', '이번 주 유튜브 분석 리포트'],
-  ['정화백', '회의록 3개 요약'],
-  ['찰리조', '로그인 버그 디버깅'],
-  ['델타조', 'BuzzLab 슬라이드 렌더'],
-  ['소통꾼', '수강생 공지 메일 초안'],
-  ['골프조', '1분기 손익표 정리'],
-  ['인디아조', '경쟁사 가격 크롤링'],
+  ['Worker 1', '주간 분석 리포트 생성'],
+  ['Worker 2', '문서 3개 요약'],
+  ['Worker 3', '로그인 버그 디버깅'],
+  ['Worker 4', '슬라이드 렌더'],
+  ['Worker 5', '공지 메일 초안'],
 ];
 
 function uid() { return Math.random().toString(36).slice(2, 9); }

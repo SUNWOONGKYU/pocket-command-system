@@ -36,7 +36,7 @@ if (-not (Test-Path $listFile)) {
       $safe = ($name -replace '\s', '_')
       $log = Join-Path $logDir ("worker_" + $safe + ".log")
       Write-Host "  -> $name"
-      # 이름은 환경변수로 전달 — 공백 있는 이름("주식 트레이더" 등)이 argv에서 쪼개지는 버그 회피.
+      # 이름은 환경변수로 전달 — 공백 있는 이름("Worker Name" 등)이 argv에서 쪼개지는 버그 회피.
       # PowerShell의 $env 는 유니코드라 한글·공백 모두 안전하며, Start-Process가 부모 env를 상속한다.
       $env:AGENT_NAME = $name
       Start-Process -FilePath "node" `

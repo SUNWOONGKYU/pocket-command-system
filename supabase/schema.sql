@@ -15,7 +15,7 @@ exception when duplicate_object then null; end $$;
 -- ---------- agents : 에이전트(소대원) 현황 ----------
 create table if not exists agents (
   id               uuid primary key default gen_random_uuid(),
-  name             text not null unique,          -- 허실장, 알파조, 정화백, 소통꾼 ...
+  name             text not null unique,          -- 오케스트레이터, 알파, 브라보, 찰리 ...
   role             text not null,                 -- 역할 설명 (오케스트레이터가 매핑 시 참고)
   squad            text default '1중대',          -- 그룹핑(선택)
   kind             text not null default 'claude_api', -- python | claude_code | claude_api | orchestrator

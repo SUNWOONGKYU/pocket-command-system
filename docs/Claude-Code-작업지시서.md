@@ -54,7 +54,7 @@
 ## 2. 아키텍처 한 장
 
 ```
-[텔레그램] ──톡──▶ /api/telegram ──▶ 오케스트레이터(허실장) ── 담당 결정
+[텔레그램] ──톡──▶ /api/telegram ──▶ 오케스트레이터 ── 담당 결정
     ▲                                      │
     │ 결과/경고                             ▼
     │                              tasks 큐 (Supabase)
@@ -75,7 +75,7 @@
 ```
 agents
   id uuid PK
-  name text unique          -- 허실장, 알파조 ...
+  name text unique          -- 오케스트레이터, 알파, 브라보 ...
   role text                 -- 역할 설명(오케스트레이터 매핑 참고)
   squad text                -- 그룹(소대)
   kind text                 -- python | claude_code | claude_api | orchestrator
@@ -109,11 +109,11 @@ tasks
 
 | 유형 | 예시 | 동작 |
 |---|---|---|
-| 단일 지시 | `알파조, 유튜브 리포트 뽑아줘` | 오케스트레이터가 담당 배정 → 큐 적재 |
+| 단일 지시 | `알파, 리포트 뽑아줘` | 오케스트레이터가 담당 배정 → 큐 적재 |
 | 동시 투입 | `전원, 일일 점검` / `@all ...` | 전 실행형 에이전트에 동시 적재 |
-| 중단 | `정지 찰리조` / `찰리조 그만` | control=stop + 대기열 취소 |
+| 중단 | `정지 브라보` / `브라보 그만` | control=stop + 대기열 취소 |
 | 전체 중단 | `전원 정지` | 전원 중단 |
-| 세션 초기화 | `새세션 정화백` / `리셋 찰리조` | claude_code 맥락 끊기 |
+| 세션 초기화 | `새세션 알파` / `리셋 브라보` | claude_code 맥락 끊기 |
 | 현황 | `/status` | 작업/대기 인원 브리핑 |
 
 라우팅 우선순위: 이름 직접 지정 > LLM 판단 > 키워드 규칙 > 예비(마이크조).
@@ -162,7 +162,7 @@ supabase/schema.sql 을 작성해줘. 위 데이터 모델 그대로.
 - updated_at 자동 갱신 트리거.
 - alter publication supabase_realtime add table agents, tasks.
 - RLS 활성화, select는 모두 허용(쓰기는 service_role이 우회).
-- 16명 시드(허실장=orchestrator + 워커 15). 일부에 kind=python(workdir/entry), kind=claude_code(workdir, skill) 예시 지정.
+- 16명 시드(오케스트레이터=orchestrator + 워커 15). 일부에 kind=python(workdir/entry), kind=claude_code(workdir, skill) 예시 지정.
 ```
 **✅ 완료 기준:** SQL Editor에서 에러 없이 실행, agents 16행, Realtime에 두 테이블 포함.
 
@@ -202,7 +202,7 @@ app/api/telegram/route.ts (runtime nodejs, POST)를 만들어줘.
 lib/orchestrator.ts: 이름직지정 > LLM(claude-haiku, ANTHROPIC_API_KEY 있을 때) > 키워드규칙 > 예비 순으로 담당 결정.
 scripts/set-webhook.ts: PUBLIC_BASE_URL/api/telegram 로 setWebhook.
 ```
-**✅ 완료 기준:** 봇에 `/status` 응답. `알파조, 테스트` → tasks에 queued 1건 + 접수 메시지.
+**✅ 완료 기준:** 봇에 `/status` 응답. `알파, 테스트` → tasks에 queued 1건 + 접수 메시지.
 
 ---
 
@@ -320,8 +320,8 @@ claude_code 어댑터를 보강해줘.
 # 1. Supabase: schema.sql 실행
 # 2. .env.local 작성
 # 3. 각 머신에서 워커 기동 (에이전트당 1개)
-AGENT_NAME=찰리조 npm run worker
-AGENT_NAME=알파조 npm run worker
+AGENT_NAME=브라보 npm run worker
+AGENT_NAME=알파 npm run worker
 # 4. 배포 후 텔레그램 연결
 PUBLIC_BASE_URL=https://<배포도메인> npm run set-webhook
 # 5. 텔레그램으로 지시 → /(관제) 와 /console(콘솔) 에서 관제

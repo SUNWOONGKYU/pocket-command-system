@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   if (text.trim() === '/명단' || text.trim() === '/workers') {
     const { data } = await supabase.from('agents').select('name,kind');
     const names = (data ?? []).filter((a) => a.kind !== 'orchestrator' && !a.name.endsWith('감사관')).map((a) => a.name);
-    await sendTelegram(chatId, `👥 워커 (앞에 <b>@</b> 붙여 직접 지정)\n명령: <code>@알파 쓰레드 발굴해줘</code>\n제어: <code>급정지 알파</code> · <code>재가동 알파</code> · <code>종료 알파</code>\n\n${names.map((n) => '@' + n).join('\n')}`);
+    await sendTelegram(chatId, `👥 워커 (앞에 <b>@</b> 붙여 직접 지정)\n명령: <code>@알파 버그 수정해줘</code>\n제어: <code>급정지 알파</code> · <code>재가동 알파</code> · <code>종료 알파</code>\n\n${names.map((n) => '@' + n).join('\n')}`);
     return NextResponse.json({ ok: true });
   }
 
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // ── 세션 초기화: "새세션 정화백" / "리셋 찰리조" → 대화 맥락 끊기 (감사관 제외) ──
+  // ── 세션 초기화: "새세션 알파" / "리셋 브라보" → 대화 맥락 끊기 (감사관 제외) ──
   if (/(^|\s)(새세션|리셋|reset)(\s|$)/i.test(text)) {
     const isAll = /(전원|@all)/i.test(text);
     const targets = (isAll ? executable : executable.filter((a) => text.includes(a.name))).filter((a) => !a.name.endsWith('감사관'));
@@ -117,7 +117,7 @@ export async function POST(req: Request) {
   const trimmed = text.trim();
   if (trimmed.startsWith('@')) {
     const rest = trimmed.slice(1);
-    // 긴 이름 우선 매칭 ('알파 감사관'이 '알파'보다 먼저 / 'ValueLink Developer' 등 공백 포함 이름 대응)
+    // 긴 이름 우선 매칭 ('알파 감사관'이 '알파'보다 먼저 / 'Worker Name' 등 공백 포함 이름 대응)
     const worker = [...executable]
       .sort((a, b) => b.name.length - a.name.length)
       .find((a) => rest.startsWith(a.name));

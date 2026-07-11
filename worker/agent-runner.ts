@@ -1,5 +1,5 @@
 // 워커 에이전트 — 한 명의 에이전트로 동작하는 독립 프로세스.
-// 실행:  AGENT_NAME=알파조 npx tsx worker/agent-runner.ts
+// 실행:  AGENT_NAME=알파 npx tsx worker/agent-runner.ts
 //
 // kind 별 실행기 어댑터: python | claude_code | claude_api
 // 양방향 제어: 큐에서 작업 픽업(실행) + control='stop' 감지 시 즉시 중단.
