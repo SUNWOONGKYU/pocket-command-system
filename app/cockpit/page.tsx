@@ -7,11 +7,12 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase';
 import { Agent, Task, deriveStatus, STATUS_META, USAGE_STALE_SEC } from '@/lib/types';
-import cfg from '@/config/projects.json';
 import s from './cockpit.module.css';
 
 type Proj = { id: string; label: string; worker: string; auditor: string; git: string };
-const PROJECTS: Proj[] = (cfg as { projects: Proj[] }).projects;
+// ★ 운영 실데이터(프로젝트 실명·워커 편제)를 클라이언트 번들에 안 박기 위해 정적 import 대신
+//   /api/projects에서 서버(Node fs)로만 읽어 fetch한다 — config/projects.json 직접 import 금지.
+//   공개 clone엔 projects.local.json 자체가 없어 서버가 예시(config/projects.json)로 자동 폴백한다.
 
 const TASK_LABELS: Record<string, string> = { queued: '대기', in_progress: '진행', done: '완료', failed: '실패' };
 const TASK_COLORS: Record<string, string> = { queued: '#4a8f6b', in_progress: '#00e5ff', done: '#00ff9c', failed: '#ff3b6b' };
@@ -67,6 +68,7 @@ function usageGauge(a: Agent | null, now: number): { text: string; color: string
 }
 
 export default function Cockpit() {
+  const [PROJECTS, setProjects] = useState<Proj[]>([]); // /api/projects에서 로드(정적 import 아님 — 번들 분리 목적)
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [now, setNow] = useState(Date.now());
@@ -109,6 +111,14 @@ export default function Cockpit() {
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  // 프로젝트 매핑(운영 실데이터 or 공개본 예시) — 서버 API로만 로드, 클라이언트 번들엔 안 실림.
+  useEffect(() => {
+    fetch('/api/projects')
+      .then((r) => r.json())
+      .then((j) => { if (j.ok && Array.isArray(j.projects)) setProjects(j.projects); })
+      .catch(() => {}); // 실패해도 조용히 — 아래 목록 렌더가 빈 배열로 자연스럽게 처리
   }, []);
 
   useEffect(() => {

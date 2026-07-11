@@ -46,3 +46,7 @@ _audit/
 # 운영 전용 로컬 기록 (실PC명·실경로·내부 운영 히스토리 — 공개 repo로 전환된 뒤 추적 제외)
 /_WorkLog/
 docs/데몬워커-편제-운영지식.md
+
+# 운영 실데이터(프로젝트 실명·워커 편제·감사 기준) — 공개본엔 config/*.json의 일반화 예시만 tracked.
+# 실데이터는 *.local.json으로 두면 서버(app/api/projects)·enqueue-audit.js가 우선 읽는다.
+/config/*.local.json

@@ -10,58 +10,22 @@ const { execSync } = require('child_process');
 // (예전 하드코딩 'C:/Dev/pocket-commander/.env.local'은 랩탑에서 경로 불일치로 supabase 자격을 못 읽어 감사 스킵되던 버그.)
 const ENV_PATH = path.join(__dirname, '..', '.env.local');
 
-// 프로젝트별 설정: worker(작업 워커)·auditor(감사관)·criteria(5기준 텍스트)
-const PROJECTS = {
-  DID_system: {
-    worker: 'DID', auditor: 'DID 감사관', criteria:
-`① 정확성(코드·문서 오류·버그)
-② DID 불변식·가드레일 준수("시스템은 결정 안 함", 'Aide' 용어 안 씀, MVP=Value 단일엔진+시트 등)
-③ 작업 범위 일탈(scope creep)
-④ 보안·위험
-⑤ DID 특허 준수 — 핵심 발명요소(3D 좌표계 20유형 · 문서=Co-writer/비문서=Active Processor 분기 · 4+서브엔진 병렬 · 계층별 의사결정 · L1→L2→L3→L1 순환/자가개선)와 청구항 부합 여부. 필요시 Patent_DID\\ 명세서·청구항 대조.` },
-  SAAH: {
-    worker: '알파', auditor: '알파 감사관', criteria:
-`① 정확성(코드 버그·오류)
-② SAL Grid 기록 의무 — 코드 수정 시 grid_records/TASK_PLAN 반영 여부(SAL_Grid_Dev_Suite 규약). 미반영이면 '미완료'로 지적.
-③ UI 실동작·dead-link — "curl 200 ≠ 동작". href 없는 버튼·클릭되는 <div>·존재하지 않는 라우트(404)·잘못된 경로/파라미터를 버그로 지적.
-④ 작업 범위 일탈(scope creep)
-⑤ 보안 — 시크릿·API 키 하드코딩, Supabase RLS 누락, 키 노출.` },
-  ValueLink: {
-    worker: 'ValueLink Developer', auditor: 'ValueLink Developer 감사관', criteria:
-`① 정확성(코드 버그·로직 오류)
-② 기존 기능 회귀 — 이번 변경이 기존 동작을 깨지 않는지, 테스트/검증이 동반됐는지.
-③ 작업 범위 일탈(scope creep)
-④ 보안 — 시크릿·키 노출, 입력 검증.
-⑤ 코드 품질·유지보수성 — 중복·과복잡·네이밍·죽은 코드.` },
-  'trader-bot': {
-    worker: '주식 트레이더', auditor: '주식 트레이더 감사관', criteria:
-`① 정확성(코드 버그·계산 오류)
-② ★실거래 안전(최우선) — 오주문·체결 로직 결함·의도치 않은 매매·수량/가격 단위 오류·중복 주문 가능성을 최우선 점검.
-③ 리스크 관리 — 손절·포지션 한도·예외처리·API 실패 시 안전정지(fail-safe) 여부.
-④ 작업 범위 일탈(scope creep)
-⑤ 보안 — API 키·계좌·시크릿 노출, 주문 권한 범위.` },
-  WAAT: {
-    worker: '찰리', auditor: '찰리 감사관', criteria:
-`① 정확성(코드 버그·오류)
-② UI 실동작·dead-link — "curl 200 ≠ 동작". href 없는 버튼·클릭되는 <div>·404·잘못된 경로/파라미터를 버그로 지적(모임·게시판 사이트라 사용자 여정 중요).
-③ 작업 범위 일탈(scope creep)
-④ 보안 — Supabase RLS·Auth(이메일/Google OAuth)·.env/Resend API 키 노출, 게시판 입력 XSS 검증.
-⑤ 데이터·이메일 안전 — Resend 이메일 오발송(잘못된 수신자·스팸)·개인정보(이메일) 처리 적정성.` },
-  'stock-prediction': {
-    worker: '델타', auditor: '델타 감사관', criteria:
-`① 정확성(코드·계산 오류·데이터 파이프라인 FDR/pykrx/DART)
-② 데이터·알고리즘 정합성 — ★가짜/하드코딩 데이터 금지(placeholder 미매칭 시 DataMissingError 가드 준수)·미발동 토론/차트는 정직 표시·Chronos-2/Monte Carlo/rNPV 계산 타당성.
-③ ★면책·규제 준수 — 추천(BUY/SELL) 금지 → 전망 성향(낙관/중립/회의)·확률·정보제공 면책 유지(유사투자자문 회피).
-④ 작업 범위 일탈(scope creep)
-⑤ 보안 — DART·API 키·시크릿 노출.` },
-  'pocket-commander': {
-    worker: '에코', auditor: '에코 감사관', criteria:
-`① ★본체 무결성(최우선) — 워커 데몬(agent-runner)·오케스트레이터·모니터·하트비트/큐 폴링 루프를 깨뜨리지 않는가. 여기 결함은 전 워커 장애로 직결. 기동·세션 이어붙이기·중단(control=stop) 신호 회귀 점검.
-② 시크릿 안전 — .env.local·API 키·토큰·service_role 노출, 로그/커밋에 시크릿 유입.
-③ 재귀·안전 가드 훼손 — _audit/·sessions/ gitignore, CLAUDE_WIKI_CHILD, 감사 무한루프 방지 가드를 건드리지 않았는가.
-④ 작업 범위 일탈(scope creep).
-⑤ 정확성(코드 버그·로직 오류) + 공개본 분리 — 운영 PII/시크릿이 공개 repo(pocket-command-system)로 새지 않게.` },
-};
+// 프로젝트별 설정(worker·auditor·criteria)은 공개본에 실데이터가 tracked되지 않도록 JSON으로 외부화했다.
+//   config/audit-projects.local.json(운영 실데이터, gitignore) 있으면 그걸, 없으면
+//   config/audit-projects.json(공개본에 tracked된 일반화 예시)을 __dirname 기준으로 읽는다.
+//   ★ 워커 감사 파이프라인 핵심 — 운영에선 local.json에서 실데이터를 읽어 기존과 100% 동일하게 동작해야 한다.
+const PROJECTS_LOCAL_PATH = path.join(__dirname, '..', 'config', 'audit-projects.local.json');
+const PROJECTS_EXAMPLE_PATH = path.join(__dirname, '..', 'config', 'audit-projects.json');
+function loadProjects() {
+  try {
+    const p = fs.existsSync(PROJECTS_LOCAL_PATH) ? PROJECTS_LOCAL_PATH : PROJECTS_EXAMPLE_PATH;
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch (e) {
+    console.error('[audit] 프로젝트 설정 로드 실패 — 스킵', e);
+    return {};
+  }
+}
+const PROJECTS = loadProjects();
 
 function envGet(k) { try { const t = fs.readFileSync(ENV_PATH, 'utf8'); const m = t.match(new RegExp('^' + k + '=(.*)$', 'm')); return m ? m[1].trim() : null; } catch { return null; } }
 function git(a) { try { return execSync('git ' + a, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }); } catch (e) { return ((e.stdout || '') + ''); } }

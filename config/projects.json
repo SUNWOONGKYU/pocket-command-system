@@ -1,8 +1,7 @@
 {
-  "_comment": "콕핏 프로젝트 매핑 예시(placeholder) — worker/auditor는 agents.name과 정확히 일치해야 함. label은 카드 표시명. git은 경영 계층(최근 커밋) 표시용(선택, 콕핏 서버가 있는 호스트 기준 로컬 경로). 실제 배치에 맞게 프로젝트 행을 자유롭게 추가/수정하세요.",
+  "_comment": "콕핏 프로젝트 매핑 예시 — 공개본 기본값. 실제 운영 데이터는 config/projects.local.json(gitignore)에 두면 그쪽이 우선 사용된다. worker/auditor는 agents.name과 정확히 일치해야 함. label은 카드 표시명. git은 경영 계층(최근 커밋) 표시용(선택).",
   "projects": [
-    { "id": "project-a", "label": "프로젝트 A", "worker": "알파", "auditor": "알파 감사관", "git": "C:/Dev/project-a" },
-    { "id": "project-b", "label": "프로젝트 B", "worker": "브라보", "auditor": "브라보 감사관", "git": "" },
-    { "id": "command",   "label": "지휘부",      "worker": "오케스트레이터(참모장)", "auditor": "", "git": "" }
+    { "id": "project-a", "label": "Project A", "worker": "Worker 1", "auditor": "Worker 1 Auditor", "git": "" },
+    { "id": "project-b", "label": "Project B", "worker": "Worker 2", "auditor": "Worker 2 Auditor", "git": "" }
   ]
 }

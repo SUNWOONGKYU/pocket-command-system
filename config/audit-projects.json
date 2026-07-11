@@ -1,0 +1,8 @@
+{
+  "_comment": "감사 파이프라인 프로젝트별 설정 예시 — 공개본 기본값. 실제 운영 데이터는 config/audit-projects.local.json(gitignore)에 두면 그쪽이 우선 사용된다. key는 enqueue-audit.js 호출 시 넘기는 projectKey와 일치해야 함.",
+  "project-a": {
+    "worker": "Worker 1",
+    "auditor": "Worker 1 Auditor",
+    "criteria": "① 정확성(코드 버그·오류)\n② 작업 범위 일탈(scope creep)\n③ 보안 — 시크릿·API 키 노출\n④ 기존 기능 회귀\n⑤ 코드 품질·유지보수성"
+  }
+}
