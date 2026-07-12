@@ -278,8 +278,7 @@ export default function Cockpit() {
 
       <div className={selProj ? `${s.cockpit} ${s.chatMode}` : s.cockpit} style={{ paddingBottom: dockH + 24 }}>
         <div className={s.head}>
-          <h2>내 프로젝트</h2>
-          <span className="count">{PROJECTS.length}개 · 워커+감사관 · 카드 탭 → 명령·태스크</span>
+          <span className={s.count}>내 프로젝트 {PROJECTS.length}개</span>
         </div>
 
         {!live && (

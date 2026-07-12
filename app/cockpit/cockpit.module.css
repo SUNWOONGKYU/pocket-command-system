@@ -3,7 +3,6 @@
 .cockpit { padding: 18px; max-width: 1180px; margin: 0 auto; padding-bottom: 168px; }
 
 .head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
-.head h2 { font-family: var(--disp); font-size: 17px; letter-spacing: 0.04em; margin: 0; }
 .head .count { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
 
 /* 상단 경고 배너 (오프라인/오류/무응답) */
