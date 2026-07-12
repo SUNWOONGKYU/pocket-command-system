@@ -282,9 +282,12 @@ export default function Cockpit() {
   // 감사 지적 프로젝트 라벨 집합 (정렬·필터에서 재사용)
   const flaggedLabels = new Set(auditAlerts.map((a) => a.label));
 
-  // 프로젝트 정렬 우선순위: 문제(오프라인/정체) → 감사지적 → 작업중 → 대기 → 워커없음, 체계조직(meta)은 맨 뒤
+  // 프로젝트 정렬 우선순위: 체계조직(meta — 지휘소·비서관·오케스트레이터)은 항상 맨 위 고정(원본 순서 유지) →
+  //   그 아래 실제 프로젝트만 문제(오프라인/정체) → 감사지적 → 작업중 → 대기 → 워커없음 순.
+  //   (PO 지시: PCS/비서관/오케스트레이터는 상태와 무관하게 최상단에 고정돼야 함 — 과거 90으로 밀어 최하단에
+  //   가던 버그를 -1로 정정)
   const projRank = (p: Proj): number => {
-    if (p.meta) return 90;
+    if (p.meta) return -1;
     const w = byName(p.worker);
     const st = w ? deriveStatus(w, now) : null;
     if (st === 'offline' || st === 'error' || st === 'stuck') return 0;
