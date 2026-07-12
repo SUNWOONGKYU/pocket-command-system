@@ -105,8 +105,8 @@ export default function Console() {
     <div className="console-shell">
       <header className="bar">
         <div className="wordmark">
-          POCKET COMMAND POST · <span className="accent">CONSOLE</span>
-          <span className="sub">TASK KANBAN · 작업 관제</span>
+          POCKET COMMAND <span className="accent">SYSTEM</span>
+          <span className="sub">콘솔 · 작업 칸반 관제</span>
         </div>
         <nav className="nav">
           <Link href="/cockpit">콕핏</Link>
