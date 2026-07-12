@@ -85,5 +85,6 @@ export const STATUS_META: Record<
   stuck: { label: 'STUCK', color: '#F5A524', glow: 'rgba(245,165,36,.5)' },
   offline: { label: 'OFFLINE', color: '#FF3B6B', glow: 'rgba(255,59,107,.6)' },
   error: { label: 'ERROR', color: '#FF3B6B', glow: 'rgba(255,59,107,.6)' },
-  command: { label: 'COMMAND', color: '#00FF9C', glow: 'rgba(0,255,156,.6)' },
+  // 오케스트레이터는 명령을 내리는(command) 지휘가 아니라 워커에게 작업을 배정·중개(orchestrate)할 뿐 — 라벨이 이를 반영.
+  command: { label: 'ORCHESTRATING', color: '#00FF9C', glow: 'rgba(0,255,156,.6)' },
 };
