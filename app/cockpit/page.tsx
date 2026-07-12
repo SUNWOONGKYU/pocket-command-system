@@ -10,7 +10,9 @@ import { Agent, Task, deriveStatus, STATUS_META, USAGE_STALE_SEC } from '@/lib/t
 import s from './cockpit.module.css';
 
 type TeamMember = { name: string; role: string; model?: string };
-type Proj = { id: string; label: string; worker: string; auditor: string; git: string; team?: TeamMember[] };
+// meta: true — 지휘소(PCS 본체)·비서관·오케스트레이터처럼 실제 "프로젝트"가 아니라
+//   체계 조직 항목인 카드. 카드로는 계속 보이되 "내 프로젝트 N개" 집계에선 제외한다.
+type Proj = { id: string; label: string; worker: string; auditor: string; git: string; team?: TeamMember[]; meta?: boolean };
 // ★ 운영 실데이터(프로젝트 실명·워커 편제)를 클라이언트 번들에 안 박기 위해 정적 import 대신
 //   /api/projects에서 서버(Node fs)로만 읽어 fetch한다 — config/projects.json 직접 import 금지.
 //   공개 clone엔 projects.local.json 자체가 없어 서버가 예시(config/projects.json)로 자동 폴백한다.
@@ -278,7 +280,7 @@ export default function Cockpit() {
 
       <div className={selProj ? `${s.cockpit} ${s.chatMode}` : s.cockpit} style={{ paddingBottom: dockH + 24 }}>
         <div className={s.head}>
-          <span className={s.count}>내 프로젝트 {PROJECTS.length}개</span>
+          <span className={s.count}>내 프로젝트 {PROJECTS.filter((p) => !p.meta).length}개</span>
         </div>
 
         {!live && (
