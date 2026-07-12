@@ -421,3 +421,13 @@ body::after {
   .wordmark { font-size: 14px; letter-spacing: 0.1em; }
   .tile .role { height: auto; }
 }
+
+/* ===================== 접근성 — 모션 최소화 ===================== */
+/* prefers-reduced-motion: 지속 애니메이션(EKG 스윕·라이브 핑·오프라인 글리치)을 정지.
+   상태색·글로우는 유지 — '움직임'만 제거해 전정기관 민감 사용자를 배려한다. */
+@media (prefers-reduced-motion: reduce) {
+  .ekg .trace { animation: none !important; stroke-dashoffset: 0 !important; }
+  .live-dot { animation: none !important; }
+  .tile[data-state='offline'] { animation: none !important; }
+  .tile:hover { transform: none !important; }
+}

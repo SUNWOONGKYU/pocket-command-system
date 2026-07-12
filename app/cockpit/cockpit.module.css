@@ -103,8 +103,10 @@
 
 .last { margin-top: 11px; font-size: 11px; color: var(--text-dim); background: var(--ink-2);
   border-left: 2px solid var(--line); border-radius: 0 8px 8px 0; padding: 8px 10px;
-  max-height: 54px; overflow: hidden; line-height: 1.45; }
-.last .lt { color: var(--text-faint); }
+  max-height: 62px; overflow: hidden; line-height: 1.45; }
+.lastHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+.last .lt { font-family: var(--mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.lastTime { font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); flex: none; }
 
 /* 관제 보드에서 통합한 하트비트(EKG) — 카드마다 워커 심전도 */
 .ekg { height: 24px; margin-top: 12px; }
@@ -193,14 +195,14 @@
   font-family: var(--disp); font-size: 13px; font-weight: 800; color: var(--text); margin-bottom: 11px; list-style: none; }
 .taskSummary::-webkit-details-marker { display: none; }
 .taskSummary b { color: var(--brand); margin-left: 4px; }
-.linkBtn { background: none; border: none; color: var(--brand); font-size: 11.5px; cursor: pointer; text-decoration: underline; }
 .taskList { display: flex; flex-direction: column; gap: 8px; }
 .taskEmpty { color: var(--text-faint); font-size: 12px; padding: 8px 0; }
 .taskRow { background: var(--panel); border: 1px solid var(--line); border-left-width: 3px; border-radius: 11px; padding: 11px 13px; }
 .taskTop { display: flex; align-items: center; gap: 8px; }
 .taskAgent { font-weight: 700; font-size: 12.5px; color: var(--text); }
 .taskStatus { font-family: var(--mono); font-size: 11px; font-weight: 700; }
-.taskBtn { margin-left: auto; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+.taskTime { font-family: var(--mono); font-size: 10px; color: var(--text-faint); margin-left: auto; }
+.taskBtn { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
   background: var(--panel-2); border: 1px solid var(--line); color: var(--text); cursor: pointer; }
 .taskBtn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
 .taskBtn:disabled { opacity: 0.4; cursor: default; }
@@ -209,6 +211,15 @@
 .taskResult { font-size: 11px; color: var(--text-faint); margin-top: 5px; background: var(--panel-2);
   border-radius: 7px; padding: 6px 8px; line-height: 1.4;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* 로딩 골격(skeleton) — 최초 프로젝트 로드 전, 레이아웃 점프 없이 '불러오는 중'을 표시 */
+.cardSkeleton { cursor: default; pointer-events: none; }
+.cardSkeleton::before { display: none; }
+.skLine { height: 11px; border-radius: 6px;
+  background: linear-gradient(90deg, var(--panel-3) 25%, var(--line) 37%, var(--panel-3) 63%);
+  background-size: 400% 100%; animation: skShimmer 1.4s ease infinite; }
+@keyframes skShimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .skLine { animation: none; } }
 
 /* 빈 상태 — 필터/검색에 걸리는 카드가 없을 때 */
 .empty { text-align: center; color: var(--text-faint); font-size: 13px; padding: 48px 16px;
@@ -220,8 +231,18 @@
 
 /* 텔레그램식 대화 — 명령=보낸 말풍선, 결과=받은 말풍선 */
 .chat { margin-top: 4px; }
-.chatHead { display: flex; align-items: center; justify-content: space-between;
-  font-size: 13px; font-weight: 800; color: var(--text); margin-bottom: 14px; }
+.chatHead { display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); }
+.backBtn { flex: none; width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text-dim);
+  transition: border-color .14s, color .14s, background .14s; }
+.backBtn:hover { border-color: var(--brand); color: var(--brand); background: rgba(0,255,156,.06); }
+.chatTitle { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.chatProj { font-family: var(--disp); font-size: 15px; font-weight: 800; color: var(--text);
+  letter-spacing: 0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chatTarget { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px;
+  color: var(--text-dim); }
 .thread { display: flex; flex-direction: column; gap: 16px; }
 .msg { display: flex; flex-direction: column; gap: 4px; }
 .sent { align-self: flex-end; max-width: 84%; background: linear-gradient(180deg, #2f5a82, #274a6d); color: #fff;
@@ -257,6 +278,16 @@
   background: #3d8bff; color: #fff; display: flex; align-items: center; justify-content: center; transition: background .12s, transform .1s; }
 .composerSend:hover:not(:disabled) { background: #2f7bee; transform: scale(1.05); }
 .composerSend:disabled { opacity: 0.35; cursor: default; }
+
+/* 접근성 — 모션 최소화 선호 시 EKG 스윕·라이브 펄스·커서 점멸 등 지속 애니메이션 정지.
+   상태색·레이아웃은 유지하되 '움직임'만 끈다(전정기관 민감 사용자 배려). */
+@media (prefers-reduced-motion: reduce) {
+  .trace { animation: none !important; stroke-dashoffset: 0 !important; }
+  .livePulse { animation: none !important; }
+  .progressCursor { animation: none !important; }
+  .fleetStat, .card, .composerSend, .backBtn { transition: none !important; }
+  .card:hover, .fleetStat:hover { transform: none !important; }
+}
 
 @media (max-width: 560px) {
   .cockpit { padding: 13px; padding-bottom: 180px; }

@@ -20,6 +20,23 @@ type Proj = { id: string; label: string; worker: string; auditor: string; git: s
 const TASK_LABELS: Record<string, string> = { queued: '대기', in_progress: '진행', done: '완료', failed: '실패' };
 const TASK_COLORS: Record<string, string> = { queued: '#4a8f6b', in_progress: '#00e5ff', done: '#00ff9c', failed: '#ff3b6b' };
 
+// 상대 시간 — "방금 · N분 전 · N시간 전 · N일 전". 카드/태스크 최신성을 한눈에.
+//   1분 미만은 '방금', 하루 넘어가면 날짜(MM.DD)로 떨어뜨려 오래된 항목이 과장돼 보이지 않게 한다.
+function relTime(iso: string | null | undefined, now: number): string {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (!then) return '';
+  const sec = Math.max(0, (now - then) / 1000);
+  if (sec < 60) return '방금';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}분 전`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}시간 전`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}일 전`;
+  return new Date(then).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' });
+}
+
 // 관제 보드에서 통합한 하트비트(EKG) 파형 — 살아있으면 심전도, offline이면 평평
 const EKG_TRACE = 'M0 13 L34 13 L40 13 L44 4 L49 22 L54 13 L72 13 L78 13 L82 9 L86 13 L120 13 L154 13 L160 13 L164 4 L169 22 L174 13 L192 13 L198 13 L202 9 L206 13 L240 13';
 const EKG_FLAT = 'M0 13 L240 13';
@@ -72,6 +89,7 @@ function usageGauge(a: Agent | null, now: number): { text: string; color: string
 
 export default function Cockpit() {
   const [PROJECTS, setProjects] = useState<Proj[]>([]); // /api/projects에서 로드(정적 import 아님 — 번들 분리 목적)
+  const [projLoaded, setProjLoaded] = useState(false); // 최초 /api/projects 응답 도착 여부 — 로딩/빈 상태 구분용
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [now, setNow] = useState(Date.now());
@@ -124,7 +142,8 @@ export default function Cockpit() {
     fetch('/api/projects')
       .then((r) => r.json())
       .then((j) => { if (j.ok && Array.isArray(j.projects)) setProjects(j.projects); })
-      .catch(() => {}); // 실패해도 조용히 — 아래 목록 렌더가 빈 배열로 자연스럽게 처리
+      .catch(() => {}) // 실패해도 조용히 — 아래 목록 렌더가 빈 배열로 자연스럽게 처리
+      .finally(() => setProjLoaded(true)); // 성공·실패 무관하게 로딩 종료 표시(빈 상태 vs 로딩 구분)
   }, []);
 
   useEffect(() => {
@@ -406,6 +425,21 @@ export default function Cockpit() {
           </div>
         </div>
 
+        {/* 최초 프로젝트 로드 전 — 골격(skeleton) 카드로 레이아웃 점프 방지 */}
+        {!projLoaded && (
+          <div className={s.grid} aria-hidden="true">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div className={`${s.card} ${s.cardSkeleton}`} key={'sk-' + i}>
+                <div className={s.skLine} style={{ width: '55%', height: 15 }} />
+                <div className={s.skLine} style={{ width: '38%', marginTop: 14 }} />
+                <div className={s.skLine} style={{ width: '30%', marginTop: 8 }} />
+                <div className={s.skLine} style={{ width: '70%', height: 22, marginTop: 16 }} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {projLoaded && (
         <div className={s.grid}>
           {visibleProjects.map((p) => {
             const w = byName(p.worker);
@@ -523,16 +557,21 @@ export default function Cockpit() {
                   </>
                 )}
                 {last && (
-                  <div className={s.last}>
-                    <span className={s.lt}>[{last.status}]</span> {last.result || last.command_text}
+                  <div className={s.last} style={{ borderLeftColor: TASK_COLORS[last.status] || 'var(--line)' }}>
+                    <div className={s.lastHead}>
+                      <span className={s.lt} style={{ color: TASK_COLORS[last.status] }}>{TASK_LABELS[last.status] || last.status}</span>
+                      <span className={s.lastTime}>{relTime(last.updated_at, now)}</span>
+                    </div>
+                    {last.result || last.command_text}
                   </div>
                 )}
               </div>
             );
           })}
         </div>
+        )}
 
-        {visibleProjects.length === 0 && (
+        {projLoaded && visibleProjects.length === 0 && (
           <div className={s.empty}>
             {query ? `"${query}" 검색 결과 없음` : filter === 'working' ? '지금 작업 중인 프로젝트가 없습니다' : filter === 'alert' ? '✓ 이상 없음 — 전 함대 정상' : '표시할 프로젝트가 없습니다'}
           </div>
@@ -558,8 +597,25 @@ export default function Cockpit() {
           // 텔레그램식 대화 — 명령=보낸 말풍선, 결과=받은 말풍선
           <div className={s.chat}>
             <div className={s.chatHead}>
-              <span>💬 <b>{selProj.label}</b> · {activeAgent}</span>
-              <button className={s.linkBtn} onClick={() => { setSel(null); setSelAgent(null); }}>← 전체</button>
+              <button className={s.backBtn} onClick={() => { setSel(null); setSelAgent(null); }} aria-label="전체 프로젝트로 돌아가기">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <div className={s.chatTitle}>
+                <span className={s.chatProj}>{selProj.label}</span>
+                <span className={s.chatTarget}>
+                  {(() => {
+                    const ta = byName(activeAgent!);
+                    const tst = ta ? deriveStatus(ta, now) : null;
+                    const c = tst ? STATUS_META[tst].color : '#3a3a3a';
+                    return <>
+                      <span className={s.pip} style={{ background: c, boxShadow: tst ? `0 0 6px ${c}` : 'none' }} />
+                      {activeAgent} · <span style={{ color: c }}>{tst ? STATUS_META[tst].label : '—'}</span>
+                    </>;
+                  })()}
+                </span>
+              </div>
             </div>
             {cmdTargets.length > 1 && (
               <div className={s.chips} style={{ padding: '4px 2px 8px' }}>
@@ -595,7 +651,7 @@ export default function Cockpit() {
                   {t.result && <div className={s.recv}>{t.result}</div>}
                   <div className={s.msgMeta}>
                     <span style={{ color: TASK_COLORS[t.status] }}>{TASK_LABELS[t.status] || t.status}</span>
-                    <span>· {new Date(t.updated_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span title={new Date(t.updated_at).toLocaleString('ko-KR')}>· {relTime(t.updated_at, now)}</span>
                     {(t.status === 'queued' || t.status === 'in_progress') && <button className={s.msgAct} disabled={sending} onClick={() => taskAction('cancel', t)}>{t.status === 'in_progress' ? '중단' : '취소'}</button>}
                     {(t.status === 'done' || t.status === 'failed') && <button className={s.msgAct} disabled={sending} onClick={() => taskAction('retry', t)}>재시도</button>}
                   </div>
@@ -623,6 +679,7 @@ export default function Cockpit() {
                   <div className={s.taskTop}>
                     <span className={s.taskAgent}>{t.assigned_agent ?? '미배정'}</span>
                     <span className={s.taskStatus} style={{ color: TASK_COLORS[t.status] }}>{TASK_LABELS[t.status] || t.status}</span>
+                    <span className={s.taskTime}>{relTime(t.updated_at, now)}</span>
                     {/* 감사관 태스크는 읽기전용 — 취소/재시도 없음(감사는 자동 전용) */}
                     {!t.assigned_agent?.endsWith('감사관') && (t.status === 'queued' || t.status === 'in_progress') && (
                       <button className={s.taskBtn} disabled={sending} onClick={() => taskAction('cancel', t)}>{t.status === 'in_progress' ? '중단' : '취소'}</button>
