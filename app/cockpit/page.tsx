@@ -18,7 +18,9 @@ type Proj = { id: string; label: string; worker: string; auditor: string; git: s
 //   공개 clone엔 projects.local.json 자체가 없어 서버가 예시(config/projects.json)로 자동 폴백한다.
 
 const TASK_LABELS: Record<string, string> = { queued: '대기', in_progress: '진행', done: '완료', failed: '실패' };
-const TASK_COLORS: Record<string, string> = { queued: '#4a8f6b', in_progress: '#00e5ff', done: '#00ff9c', failed: '#ff3b6b' };
+const TASK_COLORS: Record<string, string> = { queued: '#7C8AA0', in_progress: '#38BDF8', done: '#22C55E', failed: '#E5556F' };
+// 상태 미상(워커 없음 등) 도트·트레이스 기본색 — 정제된 뉴트럴 보더 톤(과거 #3a3a3a 대체)
+const NEUTRAL_DOT = '#2C3546';
 
 // 파일 크기 사람이 읽는 단위로 — 12.3 KB / 4.5 MB.
 function fmtSize(bytes: number): string {
@@ -132,7 +134,7 @@ function usageGauge(a: Agent | null, now: number): { text: string; color: string
   if (!u?.fetched_at) return null;
   const ageSec = (now - new Date(u.fetched_at).getTime()) / 1000;
   if (ageSec > USAGE_STALE_SEC) return null;
-  const color = u.severity === 'critical' ? '#ff3b6b' : u.severity === 'warning' ? '#f5a524' : 'var(--text-dim)';
+  const color = u.severity === 'critical' ? '#E5556F' : u.severity === 'warning' ? '#E0A93B' : 'var(--text-dim)';
   const resetTime = u.five_hour?.resets_at
     ? new Date(u.five_hour.resets_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
     : '—';
@@ -595,7 +597,7 @@ export default function Cockpit() {
               >
                 <div className={s.cardHead}>
                   <span className={s.label}>{p.label}</span>
-                  <span className={s.dot} style={{ background: wmeta?.color || '#3a3a3a', boxShadow: wmeta ? `0 0 8px ${wmeta.glow}` : 'none' }} />
+                  <span className={s.dot} style={{ background: wmeta?.color || NEUTRAL_DOT }} />
                 </div>
                 <div className={s.worker}>
                   <span className={s.wname}>{p.worker}</span>
@@ -614,7 +616,7 @@ export default function Cockpit() {
                     {p.team.map((m) => {
                       const ta = byName(m.name);
                       const tst = ta ? deriveStatus(ta, now) : null;
-                      const c = tst ? STATUS_META[tst].color : '#3a3a3a';
+                      const c = tst ? STATUS_META[tst].color : NEUTRAL_DOT;
                       const activeChip = sel === p.id && selAgent === m.name;
                       return (
                         <span
@@ -643,7 +645,7 @@ export default function Cockpit() {
                 <div className={s.ekg} data-state={wst || 'offline'}>
                   <svg viewBox="0 0 240 26" preserveAspectRatio="none">
                     <path className={s.trace} d={wst && wst !== 'offline' && wst !== 'error' ? EKG_TRACE : EKG_FLAT}
-                      stroke={wmeta?.color || '#3a3a3a'} style={{ filter: wmeta ? `drop-shadow(0 0 3px ${wmeta.glow})` : 'none' }} />
+                      stroke={wmeta?.color || NEUTRAL_DOT} />
                   </svg>
                 </div>
                 {verdict && (
@@ -738,9 +740,9 @@ export default function Cockpit() {
                   {(() => {
                     const ta = byName(activeAgent!);
                     const tst = ta ? deriveStatus(ta, now) : null;
-                    const c = tst ? STATUS_META[tst].color : '#3a3a3a';
+                    const c = tst ? STATUS_META[tst].color : NEUTRAL_DOT;
                     return <>
-                      <span className={s.pip} style={{ background: c, boxShadow: tst ? `0 0 6px ${c}` : 'none' }} />
+                      <span className={s.pip} style={{ background: c }} />
                       {activeAgent} · <span style={{ color: c }}>{tst ? STATUS_META[tst].label : '—'}</span>
                     </>;
                   })()}
@@ -752,7 +754,7 @@ export default function Cockpit() {
                 {cmdTargets.map((name) => {
                   const ta = byName(name);
                   const tst = ta ? deriveStatus(ta, now) : null;
-                  const c = tst ? STATUS_META[tst].color : '#3a3a3a';
+                  const c = tst ? STATUS_META[tst].color : NEUTRAL_DOT;
                   const active = activeAgent === name;
                   const isWorker = name === selProj.worker;
                   return (
@@ -874,7 +876,7 @@ export default function Cockpit() {
             <div className={s.taskList}>
               {shownTasks.length === 0 && <div className={s.taskEmpty}>— 태스크 없음 —</div>}
               {shownTasks.map((t) => (
-                <div className={s.taskRow} key={t.id} style={{ borderLeftColor: TASK_COLORS[t.status] || '#4a8f6b' }}>
+                <div className={s.taskRow} key={t.id} style={{ borderLeftColor: TASK_COLORS[t.status] || NEUTRAL_DOT }}>
                   <div className={s.taskTop}>
                     <span className={s.taskAgent}>{t.assigned_agent ?? '미배정'}</span>
                     <span className={s.taskStatus} style={{ color: TASK_COLORS[t.status] }}>{TASK_LABELS[t.status] || t.status}</span>

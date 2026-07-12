@@ -91,11 +91,12 @@ export const STATUS_META: Record<
   DerivedStatus,
   { label: string; color: string; glow: string }
 > = {
-  working: { label: 'WORKING', color: '#00E5FF', glow: 'rgba(0,229,255,.55)' },
-  idle: { label: 'IDLE', color: '#4a8f6b', glow: 'rgba(74,143,107,.3)' },
-  stuck: { label: 'STUCK', color: '#F5A524', glow: 'rgba(245,165,36,.5)' },
-  offline: { label: 'OFFLINE', color: '#FF3B6B', glow: 'rgba(255,59,107,.6)' },
-  error: { label: 'ERROR', color: '#FF3B6B', glow: 'rgba(255,59,107,.6)' },
+  // 정제된 상태색 — 채도 낮춰 정제(형광 제거). glow는 잔여 참조 호환용으로 유지하되 약하게.
+  working: { label: 'WORKING', color: '#38BDF8', glow: 'rgba(56,189,248,.35)' },
+  idle: { label: 'IDLE', color: '#7C8AA0', glow: 'rgba(124,138,160,.25)' },
+  stuck: { label: 'STUCK', color: '#E0A93B', glow: 'rgba(224,169,59,.35)' },
+  offline: { label: 'OFFLINE', color: '#E5556F', glow: 'rgba(229,85,111,.4)' },
+  error: { label: 'ERROR', color: '#E5556F', glow: 'rgba(229,85,111,.4)' },
   // 오케스트레이터는 명령을 내리는(command) 지휘가 아니라 워커에게 작업을 배정·중개(orchestrate)할 뿐 — 라벨이 이를 반영.
-  command: { label: 'ORCHESTRATING', color: '#00FF9C', glow: 'rgba(0,255,156,.6)' },
+  command: { label: 'ORCHESTRATING', color: '#22C55E', glow: 'rgba(34,197,94,.4)' },
 };

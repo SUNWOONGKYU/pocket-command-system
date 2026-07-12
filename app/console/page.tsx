@@ -6,10 +6,10 @@ import { createBrowserClient } from '@/lib/supabase';
 import { Task, TaskStatus } from '@/lib/types';
 
 const COLS: { key: TaskStatus; label: string; color: string }[] = [
-  { key: 'queued', label: 'QUEUED · 대기', color: '#4a8f6b' },
-  { key: 'in_progress', label: 'RUNNING · 진행', color: '#00e5ff' },
-  { key: 'done', label: 'DONE · 완료', color: '#00ff9c' },
-  { key: 'failed', label: 'FAILED · 중단', color: '#ff3b6b' },
+  { key: 'queued', label: 'QUEUED · 대기', color: '#7C8AA0' },
+  { key: 'in_progress', label: 'RUNNING · 진행', color: '#38BDF8' },
+  { key: 'done', label: 'DONE · 완료', color: '#22C55E' },
+  { key: 'failed', label: 'FAILED · 중단', color: '#E5556F' },
 ];
 
 const DEMO_CMDS: [string, string][] = [
