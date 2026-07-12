@@ -352,7 +352,7 @@ export default function Cockpit() {
           <div className={`${s.fleetStat} ${s.fleetTotal}`}>
             <span className={s.fleetNum}>{fleet.total}</span>
             <div className={s.fleetMeta}>
-              <span className={s.fleetLabel}>함대</span>
+              <span className={s.fleetLabel}>에이전트</span>
               <span className={s.fleetSub}>내 프로젝트 {PROJECTS.filter((p) => !p.meta).length}개</span>
             </div>
           </div>
@@ -573,7 +573,7 @@ export default function Cockpit() {
 
         {projLoaded && visibleProjects.length === 0 && (
           <div className={s.empty}>
-            {query ? `"${query}" 검색 결과 없음` : filter === 'working' ? '지금 작업 중인 프로젝트가 없습니다' : filter === 'alert' ? '✓ 이상 없음 — 전 함대 정상' : '표시할 프로젝트가 없습니다'}
+            {query ? `"${query}" 검색 결과 없음` : filter === 'working' ? '지금 작업 중인 프로젝트가 없습니다' : filter === 'alert' ? '✓ 이상 없음 — 전 에이전트 정상' : '표시할 프로젝트가 없습니다'}
           </div>
         )}
 
