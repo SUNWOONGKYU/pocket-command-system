@@ -37,6 +37,16 @@ export interface UsageState {
 
 export const USAGE_STALE_SEC = 600; // 이보다 오래된 fetched_at은 표시 생략(stale 오판 방지)
 
+// 태스크에 붙는 첨부파일 한 건의 메타 — 업로드 API(/api/upload)가 반환하고, tasks.attachments(jsonb 배열)에 저장된다.
+//   url은 Storage signed URL(만료 있음) — 콕핏 썸네일/다운로드, 워커 다운로드가 공용으로 쓴다.
+export interface Attachment {
+  path: string;   // 버킷 내 경로 <uuid>/<sanitized-name>
+  url: string;    // signed URL (7일 만료)
+  name: string;   // 원본 파일명(표시용)
+  size: number;   // 바이트
+  mime: string;   // MIME 타입(image/* 판정에 사용)
+}
+
 export interface Task {
   id: string;
   command_text: string;
@@ -45,6 +55,7 @@ export interface Task {
   source_chat_id: number | null;
   result: string | null;
   progress: string | null; // 실행 중 진행 로그 꼬리(claude_code stream-json 파싱, 5초 스로틀) — 종료 후에도 사후 확인용으로 보존
+  attachments?: Attachment[] | null; // 첨부파일 메타 배열(없음/null=첨부 없음, 하위호환)
   created_at: string;
   updated_at: string;
 }

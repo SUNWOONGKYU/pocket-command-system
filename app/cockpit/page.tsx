@@ -3,10 +3,10 @@
 // 포트폴리오 지휘 콕핏 — PCS의 오너 뷰. 18에이전트를 9프로젝트 카드로 묶어 한 화면에 보고,
 // 카드를 탭해 대상을 고른 뒤 하단 독에서 바로 명령한다(텔레그램 없이). PCS를 완성하는 조각.
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase';
-import { Agent, Task, deriveStatus, STATUS_META, USAGE_STALE_SEC } from '@/lib/types';
+import { Agent, Task, Attachment, deriveStatus, STATUS_META, USAGE_STALE_SEC } from '@/lib/types';
 import s from './cockpit.module.css';
 
 type TeamMember = { name: string; role: string; model?: string };
@@ -19,6 +19,58 @@ type Proj = { id: string; label: string; worker: string; auditor: string; git: s
 
 const TASK_LABELS: Record<string, string> = { queued: '대기', in_progress: '진행', done: '완료', failed: '실패' };
 const TASK_COLORS: Record<string, string> = { queued: '#4a8f6b', in_progress: '#00e5ff', done: '#00ff9c', failed: '#ff3b6b' };
+
+// 파일 크기 사람이 읽는 단위로 — 12.3 KB / 4.5 MB.
+function fmtSize(bytes: number): string {
+  if (!bytes || bytes < 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// 말풍선 코너 상태 아이콘(텔레그램식) — 전송중=시계 · 대기=✓ · 완료=✓✓ · 실패=⚠.
+//   진행중(in_progress)은 글리프 대신 애니메이션 타이핑 점(●●●)을 statusIcon에서 별도 반환.
+const ICONS = { sending: '🕘', queued: '✓', done: '✓✓', failed: '⚠' } as const;
+
+// 태스크 상태 → 말풍선 코너에 찍을 상태 글리프(진행중은 호출부에서 타이핑 점으로 별도 처리).
+function statusIcon(status: string): string {
+  if (status === 'done') return ICONS.done;
+  if (status === 'failed') return ICONS.failed;
+  return ICONS.queued; // queued 및 기타
+}
+
+// 말풍선 내부 우하단에 찍는 짧은 시각 — 텔레그램처럼 "오후 3:07" 형태(HH:MM만).
+//   상대시간(relTime)은 카드/메타 배지용, 이건 대화 말풍선 코너 전용.
+function clockTime(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (!t) return '';
+  return new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+}
+
+// 날짜 구분 칩 라벨 — "오늘 / 어제 / 7월 5일 / 2025년 12월 3일(해 넘어가면)".
+//   스레드에서 날짜가 바뀔 때마다 중앙에 필 칩으로 끼워 넣는다(텔레그램식).
+function dateChip(iso: string | null | undefined, now: number): string {
+  if (!iso) return '';
+  const then = new Date(iso);
+  if (!then.getTime()) return '';
+  const nd = new Date(now);
+  const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayDiff = Math.round((startOf(nd) - startOf(then)) / 86400000);
+  if (dayDiff === 0) return '오늘';
+  if (dayDiff === 1) return '어제';
+  if (then.getFullYear() === nd.getFullYear())
+    return then.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
+  return then.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+// 로컬 날짜 키(YYYY-MM-DD) — 스레드에서 "날짜가 바뀌었나" 비교용(타임존 안전하게 로컬 기준).
+function dayKey(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (!d.getTime()) return '';
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
 
 // 상대 시간 — "방금 · N분 전 · N시간 전 · N일 전". 카드/태스크 최신성을 한눈에.
 //   1분 미만은 '방금', 하루 넘어가면 날짜(MM.DD)로 떨어뜨려 오래된 항목이 과장돼 보이지 않게 한다.
@@ -98,7 +150,7 @@ export default function Cockpit() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
-  const [pending, setPending] = useState<{ id: string; text: string; agent: string; failed?: boolean }[]>([]);
+  const [pending, setPending] = useState<{ id: string; text: string; agent: string; failed?: boolean; attachments?: Attachment[] }[]>([]);
   const [diffOpen, setDiffOpen] = useState<Set<string>>(new Set()); // "diff 보기" 펼침 상태 — 카드(프로젝트 id)별 로컬
   const [live, setLive] = useState(true);
   const [filter, setFilter] = useState<'all' | 'alert' | 'working'>('all'); // 프로젝트 카드 빠른 필터
@@ -106,6 +158,10 @@ export default function Cockpit() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
   const [dockH, setDockH] = useState(168); // 하단 독의 실제 높이 — 본문 여백으로 예약(최신 글이 독 뒤에 가리지 않게)
+  const [actionsOpen, setActionsOpen] = useState(false); // 컴포저 좌측 ⚡ → 급정지/재가동/종료 액션시트 펼침
+  const [files, setFiles] = useState<File[]>([]); // 컴포저에서 고른(아직 안 보낸) 첨부파일들
+  const [uploading, setUploading] = useState(false); // 첨부 업로드 중(전송 버튼 스피너)
+  const fileRef = useRef<HTMLInputElement>(null); // 📎 → hidden file input
 
   // 모바일 키보드가 올라오면 명령 독을 키보드 위로 띄운다(전송 버튼이 안 가리게)
   useEffect(() => {
@@ -136,6 +192,9 @@ export default function Cockpit() {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // 대상 프로젝트/에이전트가 바뀌거나 대화를 닫으면 액션시트는 접고, 고른 첨부도 비운다(엉뚱한 대상에 남지 않게).
+  useEffect(() => { setActionsOpen(false); setFiles([]); }, [sel, selAgent]);
 
   // 프로젝트 매핑(운영 실데이터 or 공개본 예시) — 서버 API로만 로드, 클라이언트 번들엔 안 실림.
   useEffect(() => {
@@ -193,18 +252,89 @@ export default function Cockpit() {
   const activeAgent = selProj ? ((selAgent && cmdTargets.includes(selAgent)) ? selAgent : selProj.worker) : null;
 
   async function sendCommand() {
-    if (!selProj || !activeAgent || !text.trim()) return;
+    if (!selProj || !activeAgent) return;
     const body = text.trim();
+    const toSend = files;
+    // 텍스트도 첨부도 없으면 전송 안 함(둘 중 하나는 있어야).
+    if (!body && toSend.length === 0) return;
+    if (uploading || sending) return; // 업로드/전송 진행 중엔 중복 전송 방지
     const worker = activeAgent;
-    // 낙관적 표시: 보내는 즉시 내 말풍선을 대화에 띄우고 유지 (서버 반영 전까지 '전송중')
+    // 낙관적 표시: 보내는 즉시 내 말풍선을 대화에 띄우고 유지 (서버 반영 전까지 '전송중').
+    //   첨부는 업로드 전이라 아직 url이 없으므로, 로컬 미리보기(object URL)로 임시 표시한다.
     const optId = 'opt-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
-    setPending((prev) => [...prev, { id: optId, text: body, agent: worker }]);
+    const optAtt: Attachment[] = toSend.map((f) => ({
+      path: '', url: f.type.startsWith('image/') ? URL.createObjectURL(f) : '', name: f.name, size: f.size, mime: f.type,
+    }));
+    setPending((prev) => [...prev, { id: optId, text: body, agent: worker, attachments: optAtt.length ? optAtt : undefined }]);
     setText('');
+    setFiles([]);
     if (inputRef.current) inputRef.current.style.height = 'auto';
     inputRef.current?.focus();
+
+    // 첨부가 있으면 먼저 업로드 → 메타 획득. 업로드 실패면 전송 중단하고 낙관적 말풍선을 실패 마킹.
+    let attachments: Attachment[] = [];
+    if (toSend.length > 0) {
+      setUploading(true);
+      try {
+        const fd = new FormData();
+        toSend.forEach((f) => fd.append('file', f));
+        const r = await fetch('/api/upload', { method: 'POST', body: fd });
+        const j = await r.json();
+        if (!j.ok) { flash(j.error || '첨부 업로드 실패', true); setPending((prev) => prev.map((p) => (p.id === optId ? { ...p, failed: true } : p))); setUploading(false); return; }
+        attachments = j.attachments as Attachment[];
+      } catch { flash('첨부 업로드 네트워크 오류', true); setPending((prev) => prev.map((p) => (p.id === optId ? { ...p, failed: true } : p))); setUploading(false); return; }
+      setUploading(false);
+    }
+
     // 전송 실패 시 낙관적 말풍선을 '전송 실패'로 마킹(무기한 '전송중' 잔존 방지). 성공 시 태스크 도착 dedup가 제거.
-    const ok = await post(worker, { text: body }, `▶ ${worker}에게 전송`);
+    const ok = await post(worker, { text: body, ...(attachments.length ? { attachments } : {}) }, `▶ ${worker}에게 전송`);
     if (!ok) setPending((prev) => prev.map((p) => (p.id === optId ? { ...p, failed: true } : p)));
+  }
+
+  // 📎 파일 선택 — 최대 5개, 각 20MB 제한(서버와 동일). 초과분은 잘라내고 안내.
+  function addFiles(list: FileList | null) {
+    if (!list || list.length === 0) return;
+    const picked = Array.from(list);
+    const tooBig = picked.filter((f) => f.size > 20 * 1024 * 1024);
+    let next = [...files, ...picked.filter((f) => f.size <= 20 * 1024 * 1024)];
+    if (tooBig.length) flash(`${tooBig.length}개 파일이 20MB를 초과해 제외됨`, true);
+    if (next.length > 5) { flash('첨부는 최대 5개까지', true); next = next.slice(0, 5); }
+    setFiles(next);
+    if (fileRef.current) fileRef.current.value = ''; // 같은 파일 재선택 허용
+  }
+  function removeFile(idx: number) { setFiles((prev) => prev.filter((_, i) => i !== idx)); }
+
+  // 말풍선 안 첨부 렌더 — 이미지면 썸네일, 아니면 파일 칩(이름·크기 + 다운로드 링크).
+  function renderAtts(atts: Attachment[] | null | undefined) {
+    if (!atts || atts.length === 0) return null;
+    return (
+      <div className={s.attWrap}>
+        {atts.map((a, i) => {
+          const isImg = a.mime?.startsWith('image/') && a.url;
+          if (isImg) {
+            return (
+              <a key={i} href={a.url} target="_blank" rel="noreferrer" className={s.attThumb} title={a.name}>
+                {/* 원격 이미지(썸네일) — next/image 대신 순수 img(외부 signed URL·도메인 화이트리스트 불필요) */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={a.url} alt={a.name} loading="lazy" />
+              </a>
+            );
+          }
+          const chip = (
+            <>
+              <span className={s.attIco}>📄</span>
+              <span className={s.attInfo}>
+                <span className={s.attName}>{a.name}</span>
+                <span className={s.attSize}>{fmtSize(a.size)}</span>
+              </span>
+            </>
+          );
+          return a.url
+            ? <a key={i} href={a.url} target="_blank" rel="noreferrer" className={s.attFile} title={`${a.name} 다운로드`}>{chip}</a>
+            : <span key={i} className={s.attFile}>{chip}</span>;
+        })}
+      </div>
+    );
   }
 
   // 실제 태스크가 도착하면 같은 문구의 낙관적 말풍선 제거(중복 방지)
@@ -640,31 +770,100 @@ export default function Cockpit() {
             )}
             <div className={s.thread}>
               {shownTasks.length === 0 && pending.length === 0 && <div className={s.taskEmpty}>대화가 없습니다. 아래에서 첫 명령을 보내세요.</div>}
-              {[...shownTasks].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).map((t) => (
-                <div className={s.msg} key={t.id}>
-                  <div className={s.sent}>{t.command_text}</div>
-                  {t.status === 'in_progress' && t.progress && (
-                    <div className={s.progress}>
-                      <span className={s.progressCursor}>●</span> 진행 중… {t.progress.slice(-500)}
-                    </div>
-                  )}
-                  {t.result && <div className={s.recv}>{t.result}</div>}
-                  <div className={s.msgMeta}>
-                    <span style={{ color: TASK_COLORS[t.status] }}>{TASK_LABELS[t.status] || t.status}</span>
-                    <span title={new Date(t.updated_at).toLocaleString('ko-KR')}>· {relTime(t.updated_at, now)}</span>
-                    {(t.status === 'queued' || t.status === 'in_progress') && <button className={s.msgAct} disabled={sending} onClick={() => taskAction('cancel', t)}>{t.status === 'in_progress' ? '중단' : '취소'}</button>}
-                    {(t.status === 'done' || t.status === 'failed') && <button className={s.msgAct} disabled={sending} onClick={() => taskAction('retry', t)}>재시도</button>}
-                  </div>
-                </div>
-              ))}
-              {pending.filter((p) => p.agent === activeAgent).map((p) => (
-                <div className={s.msg} key={p.id}>
-                  <div className={s.sent}>{p.text}</div>
-                  <div className={s.msgMeta}>{p.failed
-                    ? <span style={{ color: 'var(--danger, #ff3b6b)' }}>전송 실패 · 다시 입력해 주세요</span>
-                    : <span style={{ color: 'var(--text-faint)' }}>전송중…</span>}</div>
-                </div>
-              ))}
+              {(() => {
+                // 태스크 + 낙관적 pending을 하나의 시간축으로 병합해 날짜칩·그룹핑이 둘에 걸쳐 정확히 동작하게 한다.
+                //   pending은 created_at이 없으므로 id에 실린 타임스탬프(opt-<ms>-)를 시각으로 쓴다.
+                type Row =
+                  | { kind: 'task'; at: number; task: Task }
+                  | { kind: 'pending'; at: number; p: { id: string; text: string; agent: string; failed?: boolean; attachments?: Attachment[] } };
+                const rows: Row[] = [
+                  ...shownTasks.map((t): Row => ({ kind: 'task', at: new Date(t.created_at).getTime() || 0, task: t })),
+                  ...pending
+                    .filter((p) => p.agent === activeAgent)
+                    .map((p): Row => ({ kind: 'pending', at: Number(p.id.split('-')[1]) || Date.now(), p })),
+                ].sort((a, b) => a.at - b.at);
+
+                const out: ReactNode[] = [];
+                let prevDay = '';
+                rows.forEach((row, idx) => {
+                  const iso = row.kind === 'task' ? row.task.created_at : new Date(row.at).toISOString();
+                  const dk = dayKey(iso);
+                  // 날짜가 바뀌면 중앙 날짜칩을 끼운다(첫 메시지 포함).
+                  if (dk && dk !== prevDay) {
+                    out.push(
+                      <div className={s.dateChipRow} key={'d-' + dk + '-' + idx}>
+                        <span className={s.dateChip}>{dateChip(iso, now)}</span>
+                      </div>,
+                    );
+                    prevDay = dk;
+                  }
+                  // 그룹핑: 다음 행이 같은 방향(보낸 쪽=sent)일 때는 꼬리를 달지 않고 간격을 좁힌다.
+                  //   sent만 존재하는 대화라 방향 판정은 단순(전부 보낸 말풍선 + 그에 딸린 받은/진행 말풍선).
+                  const next = rows[idx + 1];
+                  const groupedWithNext = !!next; // 다음 행이 있으면 뒤로 이어짐 → 마지막 아닌 sent는 꼬리 생략
+                  const tailCls = groupedWithNext ? s.noTail : '';
+
+                  if (row.kind === 'pending') {
+                    const p = row.p;
+                    out.push(
+                      <div className={`${s.msg} ${idx > 0 ? s.msgGrouped : ''}`} key={p.id}>
+                        <div className={`${s.sent} ${tailCls}`}>
+                          {renderAtts(p.attachments)}
+                          {p.text}
+                          <span className={s.bubbleMeta}>
+                            <span className={s.bTime}>{clockTime(new Date(row.at).toISOString())}</span>
+                            {p.failed
+                              ? <span className={s.bStat} title="전송 실패">{ICONS.failed}</span>
+                              : <span className={s.bStat} title="전송중">{ICONS.sending}</span>}
+                          </span>
+                        </div>
+                        {p.failed && <div className={s.sendFail}>전송 실패 · 다시 입력해 주세요</div>}
+                      </div>,
+                    );
+                    return;
+                  }
+
+                  const t = row.task;
+                  const canCancel = t.status === 'queued' || t.status === 'in_progress';
+                  const canRetry = t.status === 'done' || t.status === 'failed';
+                  out.push(
+                    <div className={`${s.msg} ${idx > 0 ? s.msgGrouped : ''}`} key={t.id}>
+                      <div className={`${s.sent} ${tailCls}`}>
+                        {renderAtts(t.attachments)}
+                        {t.command_text}
+                        <span className={s.bubbleMeta}>
+                          <span className={s.bTime}>{clockTime(t.created_at)}</span>
+                          <span className={s.bStat} title={TASK_LABELS[t.status] || t.status} style={{ color: TASK_COLORS[t.status] }}>
+                            {t.status === 'in_progress'
+                              ? <span className={s.bubbleTyping}><i /><i /><i /></span>
+                              : statusIcon(t.status)}
+                          </span>
+                        </span>
+                      </div>
+                      {t.status === 'in_progress' && t.progress && (
+                        <div className={s.progress}>
+                          <span className={s.progressCursor}>●</span> 진행 중… {t.progress.slice(-500)}
+                        </div>
+                      )}
+                      {t.result && (
+                        <div className={s.recv}>
+                          {t.result}
+                          <span className={s.bubbleMeta}>
+                            <span className={s.bTime}>{clockTime(t.updated_at)}</span>
+                          </span>
+                        </div>
+                      )}
+                      {(canCancel || canRetry) && (
+                        <div className={s.msgActs}>
+                          {canCancel && <button className={s.msgAct} disabled={sending} onClick={() => taskAction('cancel', t)}>{t.status === 'in_progress' ? '중단' : '취소'}</button>}
+                          {canRetry && <button className={s.msgAct} disabled={sending} onClick={() => taskAction('retry', t)}>재시도</button>}
+                        </div>
+                      )}
+                    </div>,
+                  );
+                });
+                return out;
+              })()}
             </div>
           </div>
         ) : (
@@ -702,37 +901,109 @@ export default function Cockpit() {
         <div className={s.dockInner}>
           {selProj ? (
             <>
-              <div className={s.quick}>
-                <button className={`${s.qbtn} ${s.danger}`} disabled={sending}
-                  onClick={() => post(activeAgent!, { control: 'stop' }, `${activeAgent} 급정지`)}>급정지</button>
-                <button className={s.qbtn} disabled={sending}
-                  onClick={() => post(activeAgent!, { control: 'run' }, `${activeAgent} 재가동`)}>재가동</button>
-                <button className={`${s.qbtn} ${s.danger}`} disabled={sending}
-                  onClick={() => post(activeAgent!, { control: 'terminate' }, `${activeAgent} 작업 종료`)}>종료</button>
-              </div>
+              {/* 액션시트 — ⚡로 펼치면 컴포저 위로 급정지/재가동/종료가 올라온다. 평소엔 공간을 안 먹는다. */}
+              {actionsOpen && (
+                <>
+                  <div className={s.sheetScrim} onClick={() => setActionsOpen(false)} aria-hidden="true" />
+                  <div className={s.actionSheet} role="menu">
+                    <div className={s.sheetTitle}>{activeAgent} 제어</div>
+                    <button className={`${s.sheetBtn} ${s.danger}`} disabled={sending}
+                      onClick={() => { post(activeAgent!, { control: 'stop' }, `${activeAgent} 급정지`); setActionsOpen(false); }}>
+                      <span className={s.sheetIco}>⏸</span> 급정지
+                    </button>
+                    <button className={s.sheetBtn} disabled={sending}
+                      onClick={() => { post(activeAgent!, { control: 'run' }, `${activeAgent} 재가동`); setActionsOpen(false); }}>
+                      <span className={s.sheetIco}>▶</span> 재가동
+                    </button>
+                    <button className={`${s.sheetBtn} ${s.danger}`} disabled={sending}
+                      onClick={() => { post(activeAgent!, { control: 'terminate' }, `${activeAgent} 작업 종료`); setActionsOpen(false); }}>
+                      <span className={s.sheetIco}>⏹</span> 종료
+                    </button>
+                  </div>
+                </>
+              )}
+              {/* 선택했지만 아직 안 보낸 첨부 — 컴포저 위 칩(썸네일/파일명·크기 + X 제거) */}
+              {files.length > 0 && (
+                <div className={s.pickRow}>
+                  {files.map((f, i) => {
+                    const isImg = f.type.startsWith('image/');
+                    return (
+                      <span className={s.pickChip} key={f.name + i}>
+                        {isImg
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img className={s.pickThumb} src={URL.createObjectURL(f)} alt={f.name} />
+                          : <span className={s.pickIco}>📄</span>}
+                        <span className={s.pickInfo}>
+                          <span className={s.pickName}>{f.name}</span>
+                          <span className={s.pickSize}>{fmtSize(f.size)}</span>
+                        </span>
+                        <button className={s.pickX} onClick={() => removeFile(i)} aria-label={`${f.name} 제거`} title="제거">×</button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => addFiles(e.target.files)}
+              />
               <div className={s.composer}>
-                <textarea
-                  ref={inputRef}
-                  className={s.composerInput}
-                  value={text}
-                  rows={1}
-                  enterKeyHint="send"
-                  placeholder="메시지"
-                  onChange={(e) => {
-                    setText(e.target.value);
-                    e.target.style.height = 'auto';
-                    e.target.style.height = Math.min(e.target.scrollHeight, 140) + 'px';
-                  }}
-                  onKeyDown={(e) => {
-                    // Enter = 전송, Shift+Enter = 줄바꿈. 한글 조합중(IME)엔 무시.
-                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      sendCommand();
-                    }
-                  }}
-                />
-                <button className={s.composerSend} disabled={sending || !text.trim()} onClick={sendCommand} aria-label="전송">
-                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M3 20.5v-6l8-2-8-2v-6l19 8z" /></svg>
+                <button
+                  className={actionsOpen ? `${s.actionsToggle} ${s.actionsToggleOn}` : s.actionsToggle}
+                  onClick={() => setActionsOpen((v) => !v)}
+                  aria-label="제어 명령 (급정지·재가동·종료)"
+                  aria-expanded={actionsOpen}
+                  title="제어 명령"
+                >
+                  <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" aria-hidden="true">
+                    <path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12z" />
+                  </svg>
+                </button>
+                <button
+                  className={s.clipBtn}
+                  onClick={() => fileRef.current?.click()}
+                  disabled={files.length >= 5}
+                  aria-label="파일 첨부"
+                  title={files.length >= 5 ? '첨부는 최대 5개' : '파일 첨부'}
+                >
+                  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                  </svg>
+                </button>
+                <div className={s.composerField}>
+                  <textarea
+                    ref={inputRef}
+                    className={s.composerInput}
+                    value={text}
+                    rows={1}
+                    enterKeyHint="send"
+                    placeholder={`${activeAgent}에게 메시지`}
+                    onChange={(e) => {
+                      setText(e.target.value);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = Math.min(e.target.scrollHeight, 140) + 'px';
+                    }}
+                    onKeyDown={(e) => {
+                      // Enter = 전송, Shift+Enter = 줄바꿈. 한글 조합중(IME)엔 무시.
+                      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        sendCommand();
+                      }
+                    }}
+                  />
+                </div>
+                <button
+                  className={s.composerSend}
+                  disabled={sending || uploading || (!text.trim() && files.length === 0)}
+                  onClick={sendCommand}
+                  aria-label={uploading ? '업로드 중' : '전송'}
+                >
+                  {uploading
+                    ? <span className={s.sendSpin} aria-hidden="true" />
+                    : <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M3 20.5v-6l8-2-8-2v-6l19 8z" /></svg>}
                 </button>
               </div>
             </>

@@ -45,11 +45,32 @@ export async function POST(req: Request) {
 
   // ── 새 명령 발행 (카드 탭 대상에 태스크 큐잉) ──
   const text = (body.text || '').trim();
-  if (!text) return NextResponse.json({ ok: false, error: '명령 텍스트 필요' }, { status: 400 });
+  // 첨부 메타 배열(선택) — 있으면 tasks.attachments 에 저장, 없으면 기존과 동일(하위호환).
+  //   업로드 API(/api/upload)가 반환한 형태만 통과시킨다(path/name/url 필수). 최대 5개.
+  const rawAtt = Array.isArray(body.attachments) ? body.attachments : [];
+  const attachments = rawAtt
+    .filter((a: unknown): a is Record<string, unknown> => !!a && typeof a === 'object')
+    .filter((a: Record<string, unknown>) => typeof a.path === 'string' && typeof a.name === 'string' && typeof a.url === 'string')
+    .slice(0, 5)
+    .map((a: Record<string, unknown>) => ({
+      path: a.path, url: a.url,
+      // name은 워커가 파일명으로 쓰므로 여기서도 경로성분 제거(방어심층 — 워커 측이 최종 방어).
+      name: (String(a.name).split(/[/\\]/).pop() || 'file').replace(/[^\w.\-가-힣()[\]]/g, '_').slice(0, 120),
+      size: typeof a.size === 'number' ? a.size : 0,
+      mime: typeof a.mime === 'string' ? a.mime : 'application/octet-stream',
+    }));
+  // 첨부만 있고 텍스트가 없으면 허용(파일만 전송) — 텍스트·첨부 둘 다 없을 때만 거부.
+  if (!text && attachments.length === 0) return NextResponse.json({ ok: false, error: '명령 텍스트 필요' }, { status: 400 });
   const chatId = await resolveChatId(sb); // 결과를 텔레그램으로 돌려받기 위해 실는다
   const { data, error } = await sb
     .from('tasks')
-    .insert({ command_text: text, assigned_agent: agent, status: 'queued', source_chat_id: chatId })
+    .insert({
+      command_text: text,
+      assigned_agent: agent,
+      status: 'queued',
+      source_chat_id: chatId,
+      ...(attachments.length > 0 ? { attachments } : {}), // 없으면 컬럼을 아예 안 건드림(하위호환·null 유지)
+    })
     .select()
     .single();
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });

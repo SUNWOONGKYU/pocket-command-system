@@ -517,6 +517,44 @@ async function stopWatch() {
   }
 }
 
+// ── 첨부파일 다운로드 (attachments 있는 태스크 전용) ────────────────
+//   ★ 완전 격리: 이 함수는 attachments가 있는 태스크에서만 호출되고, 전부 try/catch로 감싸
+//   어떤 실패도 태스크를 죽이지 않는다(다운로드 실패는 프롬프트에 정직 표기 후 계속).
+//   반환: 프롬프트 끝에 append할 [첨부파일] 블록 문자열('' 이면 append 안 함).
+//   attachments 없는 태스크는 애초에 이 함수를 호출하지 않으므로 기존 경로는 1비트도 안 바뀐다.
+type AttachmentMeta = { path?: string; url?: string; name?: string; size?: number; mime?: string };
+async function downloadAttachments(taskId: string, atts: AttachmentMeta[], workdir: string | null): Promise<string> {
+  const lines: string[] = [];
+  // workdir가 없으면(예: claude_api 워커) 임시 폴더에 받는다.
+  const baseDir = workdir || os.tmpdir();
+  const dir = path.join(baseDir, '_attachments', taskId);
+  try { fs.mkdirSync(dir, { recursive: true }); } catch { /* 실패해도 아래 개별 다운로드에서 다시 잡힘 */ }
+
+  for (const a of atts) {
+    const rawName = a?.name || (a?.path ? String(a.path).split('/').pop() : null) || 'file';
+    // ★ 경로 순회 방지 (fail-safe): a.name은 DB에서 온 값이라 워커는 절대 신뢰하지 않는다.
+    //   /api/command가 넘긴 name에 '../../evil.js'가 있어도 여기서 basename+치환+상대경로 검증으로 봉쇄.
+    //   ('..'·드라이브 접두·구분자 제거 → 항상 dir 하위 단일 파일명에만 쓰기)
+    const name = (path.basename(rawName).replace(/[^\w.\-가-힣()[\]]/g, '_') || 'file').slice(0, 120);
+    try {
+      if (!a?.url) throw new Error('url 없음');
+      const dest = path.join(dir, name);
+      const rel = path.relative(dir, dest);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('unsafe name');
+      const res = await fetch(a.url, { signal: AbortSignal.timeout(30000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = Buffer.from(await res.arrayBuffer());
+      fs.writeFileSync(dest, buf);
+      lines.push(`- ${dest} (${name})`);
+    } catch (e) {
+      // 다운로드 실패는 태스크를 죽이지 않는다 — 정직하게 표기하고 계속.
+      lines.push(`- (첨부 ${name} 다운로드 실패: ${String((e as Error)?.message || e).slice(0, 120)})`);
+      console.error(`[${NAME}] 첨부 다운로드 실패 — ${name}`, e);
+    }
+  }
+  return lines.length ? `\n\n[첨부파일]\n${lines.join('\n')}` : '';
+}
+
 // ── 작업 픽업 + 실행 ───────────────────────────────────────────
 async function pickAndRun(self: Agent) {
   if (current.taskId) return; // 한 번에 한 작업
@@ -552,8 +590,24 @@ async function pickAndRun(self: Agent) {
     await sb.from('agents').update({ status: 'working', current_task_id: task.id }).eq('name', NAME);
     console.log(`[${NAME}/${self.kind}] ▶ ${task.command_text}`);
 
+    // 첨부파일이 있으면 실행 전에 로컬로 받아 프롬프트 끝에 경로 목록을 append한다.
+    //   ★ attachments가 없으면(대다수 태스크) 이 블록은 통째로 스킵 → commandText === task.command_text(무변경).
+    //   전체를 try/catch로 감싸 첨부 처리 실패가 태스크 본류를 죽이지 않게 한다.
+    let commandText = task.command_text;
+    try {
+      const atts = Array.isArray((task as { attachments?: AttachmentMeta[] }).attachments)
+        ? (task as { attachments?: AttachmentMeta[] }).attachments!
+        : [];
+      if (atts.length > 0) {
+        const block = await downloadAttachments(task.id, atts, self.workdir);
+        if (block) commandText = task.command_text + block;
+      }
+    } catch (e) {
+      console.error(`[${NAME}] 첨부 처리 오류(무시하고 원문으로 계속)`, e);
+    }
+
     const adapter = ADAPTERS[self.kind] || runClaudeApi;
-    let r = await adapter(task.command_text, self);
+    let r = await adapter(commandText, self);
     if (current.killed) r = { ok: false, output: '⛔ 사용자 중단' };
 
     await sb.from('tasks').update({ status: r.ok ? 'done' : 'failed', result: r.output }).eq('id', task.id);
