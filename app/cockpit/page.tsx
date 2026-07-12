@@ -3,7 +3,7 @@
 // 포트폴리오 지휘 콕핏 — PCS의 오너 뷰. 18에이전트를 9프로젝트 카드로 묶어 한 화면에 보고,
 // 카드를 탭해 대상을 고른 뒤 하단 독에서 바로 명령한다(텔레그램 없이). PCS를 완성하는 조각.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase';
 import { Agent, Task, deriveStatus, STATUS_META, USAGE_STALE_SEC } from '@/lib/types';
@@ -83,6 +83,8 @@ export default function Cockpit() {
   const [pending, setPending] = useState<{ id: string; text: string; agent: string; failed?: boolean }[]>([]);
   const [diffOpen, setDiffOpen] = useState<Set<string>>(new Set()); // "diff 보기" 펼침 상태 — 카드(프로젝트 id)별 로컬
   const [live, setLive] = useState(true);
+  const [filter, setFilter] = useState<'all' | 'alert' | 'working'>('all'); // 프로젝트 카드 빠른 필터
+  const [query, setQuery] = useState(''); // 프로젝트 이름/워커 검색
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
   const [dockH, setDockH] = useState(168); // 하단 독의 실제 높이 — 본문 여백으로 예약(최신 글이 독 뒤에 가리지 않게)
@@ -265,6 +267,50 @@ export default function Cockpit() {
     return out;
   })();
 
+  // ── 함대 상태 집계 — 헤더 스트립용 (전 에이전트를 파생상태로 분류) ──
+  const fleet = (() => {
+    let working = 0, idle = 0, alert = 0;
+    for (const a of agents) {
+      const st = deriveStatus(a, now);
+      if (st === 'working' || st === 'command') working++;
+      else if (st === 'idle') idle++;
+      else alert++; // offline · error · stuck
+    }
+    return { total: agents.length, working, idle, alert };
+  })();
+
+  // 감사 지적 프로젝트 라벨 집합 (정렬·필터에서 재사용)
+  const flaggedLabels = new Set(auditAlerts.map((a) => a.label));
+
+  // 프로젝트 정렬 우선순위: 문제(오프라인/정체) → 감사지적 → 작업중 → 대기 → 워커없음, 체계조직(meta)은 맨 뒤
+  const projRank = (p: Proj): number => {
+    if (p.meta) return 90;
+    const w = byName(p.worker);
+    const st = w ? deriveStatus(w, now) : null;
+    if (st === 'offline' || st === 'error' || st === 'stuck') return 0;
+    if (flaggedLabels.has(p.label)) return 1;
+    if (st === 'working') return 2;
+    if (st === 'command') return 3;
+    if (st === 'idle') return 4;
+    return 5;
+  };
+
+  // 카드 필터/검색 적용 + 우선순위 정렬 (원본 순서 보존을 위해 index tiebreak)
+  const q = query.trim().toLowerCase();
+  const visibleProjects = PROJECTS
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => {
+      if (q && !(`${p.label} ${p.worker}`.toLowerCase().includes(q))) return false;
+      if (filter === 'all') return true;
+      const w = byName(p.worker);
+      const st = w ? deriveStatus(w, now) : null;
+      if (filter === 'working') return st === 'working' || st === 'command';
+      // 'alert' — 문제 상태 or 감사지적
+      return st === 'offline' || st === 'error' || st === 'stuck' || flaggedLabels.has(p.label);
+    })
+    .sort((a, b) => projRank(a.p) - projRank(b.p) || a.i - b.i)
+    .map(({ p }) => p);
+
   return (
     <div className="console-shell">
       <header className="bar">
@@ -279,8 +325,30 @@ export default function Cockpit() {
       </header>
 
       <div className={selProj ? `${s.cockpit} ${s.chatMode}` : s.cockpit} style={{ paddingBottom: dockH + 24 }}>
-        <div className={s.head}>
-          <span className={s.count}>내 프로젝트 {PROJECTS.filter((p) => !p.meta).length}개</span>
+        {/* 함대 상태 스트립 — 카드를 다 훑지 않아도 함대 건강을 한눈에 */}
+        <div className={s.fleet}>
+          <div className={`${s.fleetStat} ${s.fleetTotal}`}>
+            <span className={s.fleetNum}>{fleet.total}</span>
+            <div className={s.fleetMeta}>
+              <span className={s.fleetLabel}>함대</span>
+              <span className={s.fleetSub}>내 프로젝트 {PROJECTS.filter((p) => !p.meta).length}개</span>
+            </div>
+          </div>
+          <div className={s.fleetStat} style={{ '--fc': 'var(--s-working)' } as CSSProperties}>
+            <span className={s.fleetPip} /><span className={s.fleetNum}>{fleet.working}</span>
+            <div className={s.fleetMeta}><span className={s.fleetLabel}>작업중</span></div>
+          </div>
+          <div className={s.fleetStat} style={{ '--fc': 'var(--s-idle)' } as CSSProperties}>
+            <span className={s.fleetPip} /><span className={s.fleetNum}>{fleet.idle}</span>
+            <div className={s.fleetMeta}><span className={s.fleetLabel}>대기</span></div>
+          </div>
+          <div className={s.fleetStat} style={{ '--fc': fleet.alert > 0 ? 'var(--s-offline)' : 'var(--line)' } as CSSProperties}>
+            <span className={s.fleetPip} /><span className={s.fleetNum}>{fleet.alert}</span>
+            <div className={s.fleetMeta}><span className={s.fleetLabel}>이상</span></div>
+          </div>
+          <div className={s.fleetLive}>
+            {live ? <><span className={s.livePulse} />LIVE</> : <span style={{ color: 'var(--s-stuck)' }}>◌ 오프라인</span>}
+          </div>
         </div>
 
         {!live && (
@@ -312,8 +380,31 @@ export default function Cockpit() {
           </div>
         )}
 
+        {/* 빠른 필터 + 검색 — 문제만 보기·작업중만 보기·이름 검색 */}
+        <div className={s.controls}>
+          <div className={s.filters}>
+            <button className={filter === 'all' ? `${s.fbtn} ${s.fbtnActive}` : s.fbtn} onClick={() => setFilter('all')}>
+              전체 <span className={s.fbtnCount}>{PROJECTS.length}</span>
+            </button>
+            <button className={filter === 'working' ? `${s.fbtn} ${s.fbtnActive}` : s.fbtn} onClick={() => setFilter('working')}>
+              ▶ 작업중 <span className={s.fbtnCount}>{fleet.working}</span>
+            </button>
+            <button className={filter === 'alert' ? `${s.fbtn} ${s.fbtnActive}` : s.fbtn} onClick={() => setFilter('alert')}>
+              ⚠ 이상 <span className={s.fbtnCount}>{new Set([...alerts.map((a) => a.label), ...auditAlerts.map((a) => a.label)]).size}</span>
+            </button>
+          </div>
+          <div className={s.search}>
+            <span className={s.searchIcon}>
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" strokeLinecap="round" />
+              </svg>
+            </span>
+            <input className={s.searchInput} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="프로젝트 검색" />
+          </div>
+        </div>
+
         <div className={s.grid}>
-          {PROJECTS.map((p) => {
+          {visibleProjects.map((p) => {
             const w = byName(p.worker);
             const aud = p.auditor ? byName(p.auditor) : null;
             const wst = w ? deriveStatus(w, now) : null;
@@ -332,6 +423,7 @@ export default function Cockpit() {
               <div
                 key={p.id}
                 className={sel === p.id ? `${s.card} ${s.cardSel}` : s.card}
+                style={{ '--accent': wmeta?.color || 'var(--line)' } as CSSProperties}
                 onClick={() => { setSel(p.id); setSelAgent(null); setTimeout(() => inputRef.current?.focus(), 50); }}
               >
                 <div className={s.cardHead}>
@@ -436,6 +528,12 @@ export default function Cockpit() {
             );
           })}
         </div>
+
+        {visibleProjects.length === 0 && (
+          <div className={s.empty}>
+            {query ? `"${query}" 검색 결과 없음` : filter === 'working' ? '지금 작업 중인 프로젝트가 없습니다' : filter === 'alert' ? '✓ 이상 없음 — 전 함대 정상' : '표시할 프로젝트가 없습니다'}
+          </div>
+        )}
 
         {unmapped.length > 0 && (
           <div className={s.section}>
