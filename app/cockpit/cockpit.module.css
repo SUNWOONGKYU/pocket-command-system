@@ -318,18 +318,19 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
 .msgAct:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
 .msgAct:disabled { opacity: 0.4; cursor: default; }
 
-/* 슬림 단일 바 컴포저 — ⚡ 액션토글 + 둥근 입력필드 + 원형 전송 */
+/* 슬림 단일 바 컴포저 — ⚡📎 세로 스택(폭 절약) + 둥근 입력필드 + 원형 전송 */
 .composer { display: flex; align-items: flex-end; gap: 6px; }
-/* ⚡ 액션 토글 — 급정지/재가동/종료를 액션시트로 수납(평소 공간 안 먹음). 40px — 탭 영역은 유지하되
-   입력창 폭을 더 확보(과거 모바일 전용 축소값을 데스크톱까지 통일). */
-.actionsToggle { flex: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+/* ⚡📎가 나란히(가로) 있으면 버튼 2개 폭을 차지해 입력창이 좁아진다 — 세로로 쌓아 버튼 1개 폭만 씀. */
+.composerLeftStack { flex: none; display: flex; flex-direction: column; gap: 3px; }
+/* ⚡ 액션 토글 — 급정지/재가동/종료를 액션시트로 수납(평소 공간 안 먹음). */
+.actionsToggle { flex: none; width: 36px; height: 18.5px; border-radius: 9px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   background: var(--panel-2); border: 1px solid var(--line); color: var(--text-dim);
   transition: border-color .15s, color .15s, background .15s, transform .1s; }
 .actionsToggle:hover { border-color: var(--brand); color: var(--brand); background: rgba(34,197,94,.07); }
 .actionsToggleOn { border-color: var(--brand); color: var(--brand); background: rgba(34,197,94,.12); }
-/* 📎 파일 첨부 버튼 — ⚡ 옆, 동일 톤 */
-.clipBtn { flex: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
+/* 📎 파일 첨부 버튼 — ⚡ 바로 아래, 동일 톤·크기 */
+.clipBtn { flex: none; width: 36px; height: 18.5px; border-radius: 9px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   background: var(--panel-2); border: 1px solid var(--line); color: var(--text-dim);
   transition: border-color .15s, color .15s, background .15s; }

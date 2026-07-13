@@ -953,28 +953,30 @@ export default function Cockpit() {
                 onChange={(e) => addFiles(e.target.files)}
               />
               <div className={s.composer}>
-                <button
-                  className={actionsOpen ? `${s.actionsToggle} ${s.actionsToggleOn}` : s.actionsToggle}
-                  onClick={() => setActionsOpen((v) => !v)}
-                  aria-label="제어 명령 (급정지·재가동·종료)"
-                  aria-expanded={actionsOpen}
-                  title="제어 명령"
-                >
-                  <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" aria-hidden="true">
-                    <path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12z" />
-                  </svg>
-                </button>
-                <button
-                  className={s.clipBtn}
-                  onClick={() => fileRef.current?.click()}
-                  disabled={files.length >= 5}
-                  aria-label="파일 첨부"
-                  title={files.length >= 5 ? '첨부는 최대 5개' : '파일 첨부'}
-                >
-                  <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                  </svg>
-                </button>
+                <div className={s.composerLeftStack}>
+                  <button
+                    className={actionsOpen ? `${s.actionsToggle} ${s.actionsToggleOn}` : s.actionsToggle}
+                    onClick={() => setActionsOpen((v) => !v)}
+                    aria-label="제어 명령 (급정지·재가동·종료)"
+                    aria-expanded={actionsOpen}
+                    title="제어 명령"
+                  >
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true">
+                      <path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12z" />
+                    </svg>
+                  </button>
+                  <button
+                    className={s.clipBtn}
+                    onClick={() => fileRef.current?.click()}
+                    disabled={files.length >= 5}
+                    aria-label="파일 첨부"
+                    title={files.length >= 5 ? '첨부는 최대 5개' : '파일 첨부'}
+                  >
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                    </svg>
+                  </button>
+                </div>
                 <div className={s.composerField}>
                   <textarea
                     ref={inputRef}
