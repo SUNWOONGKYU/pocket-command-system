@@ -229,6 +229,8 @@
   letter-spacing: 0.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chatTarget { display: flex; align-items: center; gap: 6px; font-family: var(--body); font-size: 12px;
   color: var(--text-dim); }
+/* 급정지/재가동/종료 제어 트리거 — 헤더 우측 끝(margin-left:auto), 액션시트가 바로 아래로 드롭다운. */
+.chatHeadRight { flex: none; margin-left: auto; position: relative; }
 /* 스레드 — 텔레그램식 은은한 도트 질감 배경(뉴트럴 톤, 아주 약하게) */
 .thread { display: flex; flex-direction: column; gap: 12px; position: relative;
   padding: 6px 2px 2px;
@@ -318,24 +320,23 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
 .msgAct:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
 .msgAct:disabled { opacity: 0.4; cursor: default; }
 
-/* 슬림 단일 바 컴포저 — ⚡📎 세로 스택(폭 절약) + 둥근 입력필드 + 원형 전송 */
+/* 슬림 단일 바 컴포저 — 📎 + 둥근 입력필드 + 원형 전송. ⚡(급정지/재가동/종료)는 채팅 헤더로 이전(제어는
+   명령 입력과 다른 성격이라 분리 — .chatHeadRight 참조). */
 .composer { display: flex; align-items: flex-end; gap: 5px; }
-/* ⚡📎가 나란히(가로) 있으면 버튼 2개 폭을 차지해 입력창이 좁아진다 — 세로로 쌓아 버튼 1개 폭만 씀. */
-.composerLeftStack { flex: none; display: flex; flex-direction: column; gap: 3px; }
-/* ⚡ 액션 토글 — 급정지/재가동/종료를 액션시트로 수납(평소 공간 안 먹음). */
-.actionsToggle { flex: none; width: 36px; height: 18.5px; border-radius: 9px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--panel-2); border: 1px solid var(--line); color: var(--text-dim);
-  transition: border-color .15s, color .15s, background .15s, transform .1s; }
-.actionsToggle:hover { border-color: var(--brand); color: var(--brand); background: rgba(34,197,94,.07); }
-.actionsToggleOn { border-color: var(--brand); color: var(--brand); background: rgba(34,197,94,.12); }
-/* 📎 파일 첨부 버튼 — ⚡ 바로 아래, 동일 톤·크기 */
-.clipBtn { flex: none; width: 36px; height: 18.5px; border-radius: 9px; cursor: pointer;
+/* 📎 파일 첨부 버튼 — 단독, 전송 버튼과 균형 맞춘 크기 */
+.clipBtn { flex: none; width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   background: var(--panel-2); border: 1px solid var(--line); color: var(--text-dim);
   transition: border-color .15s, color .15s, background .15s; }
 .clipBtn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); background: rgba(34,197,94,.07); }
 .clipBtn:disabled { opacity: 0.4; cursor: default; }
+/* ⚡ 제어 트리거 — 채팅 헤더용, .backBtn과 동일 크기(38px 원형)로 헤더 톤 일치 */
+.actionsToggle { flex: none; width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text-dim);
+  transition: border-color .15s, color .15s, background .15s, transform .1s; }
+.actionsToggle:hover { border-color: var(--brand); color: var(--brand); background: rgba(34,197,94,.07); }
+.actionsToggleOn { border-color: var(--brand); color: var(--brand); background: rgba(34,197,94,.12); }
 /* 입력 필드 래퍼 — flex:1로 늘고, 안의 textarea는 둥근 캡슐 */
 .composerField { flex: 1; min-width: 0; }
 .composerInput { width: 100%; box-sizing: border-box; display: block;
@@ -374,14 +375,15 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
   transition: color .12s, background .12s; }
 .pickX:hover { color: #EE7C90; background: rgba(229,85,111,.1); }
 
-/* 액션시트 — 컴포저 위로 펼쳐지는 작은 팝오버(급정지/재가동/종료) */
+/* 액션시트 — 채팅 헤더 ⚡ 바로 아래로 드롭다운되는 작은 팝오버(급정지/재가동/종료).
+   .chatHeadRight(position:relative)를 기준으로 absolute 배치. */
 .sheetScrim { position: fixed; inset: 0; z-index: 29; background: transparent; }
-.actionSheet { position: relative; z-index: 31; margin: 0 0 10px auto; width: max-content; min-width: 172px;
+.actionSheet { position: absolute; top: calc(100% + 8px); right: 0; z-index: 31; width: max-content; min-width: 172px;
   display: flex; flex-direction: column; gap: 5px; padding: 8px;
   background: var(--panel-2);
   border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--elev-3);
   animation: sheetIn 0.16s ease both; }
-@keyframes sheetIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes sheetIn { from { opacity: 0; transform: translateY(-8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .sheetTitle { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--text-dim); padding: 2px 8px 4px; }
 .sheetBtn { display: flex; align-items: center; gap: 9px; text-align: left;

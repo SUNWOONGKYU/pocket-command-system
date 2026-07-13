@@ -160,7 +160,7 @@ export default function Cockpit() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
   const [dockH, setDockH] = useState(168); // 하단 독의 실제 높이 — 본문 여백으로 예약(최신 글이 독 뒤에 가리지 않게)
-  const [actionsOpen, setActionsOpen] = useState(false); // 컴포저 좌측 ⚡ → 급정지/재가동/종료 액션시트 펼침
+  const [actionsOpen, setActionsOpen] = useState(false); // 채팅 헤더 ⚡ → 급정지/재가동/종료 액션시트 펼침
   const [files, setFiles] = useState<File[]>([]); // 컴포저에서 고른(아직 안 보낸) 첨부파일들
   const [uploading, setUploading] = useState(false); // 첨부 업로드 중(전송 버튼 스피너)
   const fileRef = useRef<HTMLInputElement>(null); // 📎 → hidden file input
@@ -748,6 +748,41 @@ export default function Cockpit() {
                   })()}
                 </span>
               </div>
+              {/* 급정지/재가동/종료 — 명령 입력(컴포저)과는 다른 성격의 '제어' 기능이라 채팅 헤더로 분리.
+                  (예전엔 컴포저 ⚡에 있었으나, 컴포저는 입력창 폭 확보가 우선이라 이전함.) */}
+              <div className={s.chatHeadRight}>
+                <button
+                  className={actionsOpen ? `${s.actionsToggle} ${s.actionsToggleOn}` : s.actionsToggle}
+                  onClick={() => setActionsOpen((v) => !v)}
+                  aria-label="제어 명령 (급정지·재가동·종료)"
+                  aria-expanded={actionsOpen}
+                  title="제어 명령"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+                    <path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12z" />
+                  </svg>
+                </button>
+                {actionsOpen && (
+                  <>
+                    <div className={s.sheetScrim} onClick={() => setActionsOpen(false)} aria-hidden="true" />
+                    <div className={s.actionSheet} role="menu">
+                      <div className={s.sheetTitle}>{activeAgent} 제어</div>
+                      <button className={`${s.sheetBtn} ${s.danger}`} disabled={sending}
+                        onClick={() => { post(activeAgent!, { control: 'stop' }, `${activeAgent} 급정지`); setActionsOpen(false); }}>
+                        <span className={s.sheetIco}>⏸</span> 급정지
+                      </button>
+                      <button className={s.sheetBtn} disabled={sending}
+                        onClick={() => { post(activeAgent!, { control: 'run' }, `${activeAgent} 재가동`); setActionsOpen(false); }}>
+                        <span className={s.sheetIco}>▶</span> 재가동
+                      </button>
+                      <button className={`${s.sheetBtn} ${s.danger}`} disabled={sending}
+                        onClick={() => { post(activeAgent!, { control: 'terminate' }, `${activeAgent} 작업 종료`); setActionsOpen(false); }}>
+                        <span className={s.sheetIco}>⏹</span> 종료
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
             {cmdTargets.length > 1 && (
               <div className={s.chips} style={{ padding: '4px 2px 8px' }}>
@@ -903,27 +938,7 @@ export default function Cockpit() {
         <div className={s.dockInner}>
           {selProj ? (
             <>
-              {/* 액션시트 — ⚡로 펼치면 컴포저 위로 급정지/재가동/종료가 올라온다. 평소엔 공간을 안 먹는다. */}
-              {actionsOpen && (
-                <>
-                  <div className={s.sheetScrim} onClick={() => setActionsOpen(false)} aria-hidden="true" />
-                  <div className={s.actionSheet} role="menu">
-                    <div className={s.sheetTitle}>{activeAgent} 제어</div>
-                    <button className={`${s.sheetBtn} ${s.danger}`} disabled={sending}
-                      onClick={() => { post(activeAgent!, { control: 'stop' }, `${activeAgent} 급정지`); setActionsOpen(false); }}>
-                      <span className={s.sheetIco}>⏸</span> 급정지
-                    </button>
-                    <button className={s.sheetBtn} disabled={sending}
-                      onClick={() => { post(activeAgent!, { control: 'run' }, `${activeAgent} 재가동`); setActionsOpen(false); }}>
-                      <span className={s.sheetIco}>▶</span> 재가동
-                    </button>
-                    <button className={`${s.sheetBtn} ${s.danger}`} disabled={sending}
-                      onClick={() => { post(activeAgent!, { control: 'terminate' }, `${activeAgent} 작업 종료`); setActionsOpen(false); }}>
-                      <span className={s.sheetIco}>⏹</span> 종료
-                    </button>
-                  </div>
-                </>
-              )}
+              {/* 급정지/재가동/종료 제어 액션시트는 채팅 헤더(chatHeadRight)로 이전됨 — 여기 있던 중복 블록 제거. */}
               {/* 선택했지만 아직 안 보낸 첨부 — 컴포저 위 칩(썸네일/파일명·크기 + X 제거) */}
               {files.length > 0 && (
                 <div className={s.pickRow}>
@@ -953,30 +968,17 @@ export default function Cockpit() {
                 onChange={(e) => addFiles(e.target.files)}
               />
               <div className={s.composer}>
-                <div className={s.composerLeftStack}>
-                  <button
-                    className={actionsOpen ? `${s.actionsToggle} ${s.actionsToggleOn}` : s.actionsToggle}
-                    onClick={() => setActionsOpen((v) => !v)}
-                    aria-label="제어 명령 (급정지·재가동·종료)"
-                    aria-expanded={actionsOpen}
-                    title="제어 명령"
-                  >
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true">
-                      <path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12z" />
-                    </svg>
-                  </button>
-                  <button
-                    className={s.clipBtn}
-                    onClick={() => fileRef.current?.click()}
-                    disabled={files.length >= 5}
-                    aria-label="파일 첨부"
-                    title={files.length >= 5 ? '첨부는 최대 5개' : '파일 첨부'}
-                  >
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                    </svg>
-                  </button>
-                </div>
+                <button
+                  className={s.clipBtn}
+                  onClick={() => fileRef.current?.click()}
+                  disabled={files.length >= 5}
+                  aria-label="파일 첨부"
+                  title={files.length >= 5 ? '첨부는 최대 5개' : '파일 첨부'}
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                  </svg>
+                </button>
                 <div className={s.composerField}>
                   <textarea
                     ref={inputRef}
