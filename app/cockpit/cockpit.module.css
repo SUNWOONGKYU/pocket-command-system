@@ -121,14 +121,15 @@
 .ekg[data-state='offline'] .trace, .ekg[data-state='error'] .trace { animation: none; stroke-dashoffset: 0; opacity: 0.5; }
 @keyframes sweepEkg { to { stroke-dashoffset: 0; } }
 
-/* 하단 명령 독 (선택된 카드에 명령) */
+/* 하단 명령 독 (선택된 카드에 명령) — 좌우 padding을 텔레그램 수준(8px)으로 최소화해 입력창 폭 최대화.
+   (과거엔 모바일에서만 8px로 줄였는데, 데스크톱도 동일하게 통일 — 화면 크기 무관 최대 폭.) */
 .dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
   background: rgba(14, 19, 28, 0.90);
   border-top: 1px solid var(--line); backdrop-filter: blur(18px) saturate(1.1);
   -webkit-backdrop-filter: blur(18px) saturate(1.1);
   box-shadow: 0 -8px 30px rgba(0,0,0,0.40);
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
-.dockInner { width: 100%; } /* .cockpit과 동일 전략(퍼센트 대신 고정 padding) — .dock의 16px 좌우 padding이 유일한 여백 */
+  padding: 10px 8px calc(10px + env(safe-area-inset-bottom, 0px)); }
+.dockInner { width: 100%; } /* .cockpit과 동일 전략(퍼센트 대신 고정 padding) — .dock의 8px 좌우 padding이 유일한 여백 */
 
 .hint { text-align: center; color: var(--text-faint); font-size: 12px; padding: 10px 0; }
 
@@ -250,12 +251,13 @@
 .sent, .recv {
   position: relative; animation: bubbleIn 0.18s ease both; font-family: var(--body);
 }
-/* 말풍선 max-width — 컨테이너(.cockpit)를 100%로 넓혀도 말풍선 자체는 이 값에 별도로 갇혀 있었다.
-   장문(감사 대응 등 여러 줄 텍스트)이 화면을 거의 다 쓰도록 96%로 확장 — 화면 활용도 최대화. */
-.sent { align-self: flex-end; max-width: 96%; background: #2A6DB5; color: #fff;
+/* 말풍선 max-width — 퍼센트(96%)는 화면이 넓을수록 여백도 비례해서 커져 텔레그램만큼 안 넓어 보였다.
+   .cockpit/.dockInner와 동일 철학(고정 px 여백)으로 전환 — 텔레그램처럼 화면 크기와 무관하게 항상
+   16px 정도의 최소 여백만 남기고 나머지는 전부 말풍선이 씀. */
+.sent { align-self: flex-end; max-width: calc(100% - 16px); background: #2A6DB5; color: #fff;
   border-radius: 16px 16px 5px 16px; padding: 9px 13px 7px; font-size: 13.5px; line-height: 1.5;
   white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow-y: auto; box-shadow: var(--elev-1); }
-.recv { align-self: flex-start; max-width: 96%; background: var(--panel-2); color: var(--text);
+.recv { align-self: flex-start; max-width: calc(100% - 16px); background: var(--panel-2); color: var(--text);
   border: 1px solid var(--line); border-radius: 16px 16px 16px 5px; padding: 9px 13px 7px; font-size: 13px;
   line-height: 1.6; white-space: pre-wrap; word-break: break-word;
   max-height: 300px; overflow-y: auto; box-shadow: var(--elev-1); }
@@ -305,7 +307,7 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
 .msg:hover .msgActs, .msgActs:focus-within { opacity: 1; }
 
 /* 실행 중 진행 피드 — 최종 결과(.recv)보다 흐린 톤 + 점멸 커서로 '아직 진행 중'임을 표시. 폭 넘치면 스크롤 없이 말줄임. */
-.progress { align-self: flex-start; max-width: 96%; background: transparent; color: var(--text-faint);
+.progress { align-self: flex-start; max-width: calc(100% - 16px); background: transparent; color: var(--text-faint);
   border: 1px dashed var(--line-soft); border-radius: 16px 16px 16px 5px; padding: 8px 12px;
   font-size: 11.5px; line-height: 1.5; font-family: var(--mono);
   overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
@@ -317,9 +319,10 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
 .msgAct:disabled { opacity: 0.4; cursor: default; }
 
 /* 슬림 단일 바 컴포저 — ⚡ 액션토글 + 둥근 입력필드 + 원형 전송 */
-.composer { display: flex; align-items: flex-end; gap: 8px; }
-/* ⚡ 액션 토글 — 급정지/재가동/종료를 액션시트로 수납(평소 공간 안 먹음) */
-.actionsToggle { flex: none; width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
+.composer { display: flex; align-items: flex-end; gap: 6px; }
+/* ⚡ 액션 토글 — 급정지/재가동/종료를 액션시트로 수납(평소 공간 안 먹음). 40px — 탭 영역은 유지하되
+   입력창 폭을 더 확보(과거 모바일 전용 축소값을 데스크톱까지 통일). */
+.actionsToggle { flex: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   background: var(--panel-2); border: 1px solid var(--line); color: var(--text-dim);
   transition: border-color .15s, color .15s, background .15s, transform .1s; }
@@ -342,7 +345,7 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
 .composerInput:focus { border-color: var(--brand); box-shadow: var(--ring-brand); }
 .composerInput::placeholder { color: var(--text-faint); }
 /* 원형 전송 — 입력 없으면 무채색/비활성, 입력 생기면 브랜드색으로 채워지는 트랜지션 */
-.composerSend { flex: none; width: 44px; height: 44px; border-radius: 50%; border: none; cursor: pointer;
+.composerSend { flex: none; width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
   background: var(--panel-3); color: var(--text-faint);
   display: flex; align-items: center; justify-content: center;
   transition: background .16s, color .16s, transform .1s; }
@@ -410,10 +413,6 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
   .search { margin-left: 0; width: 100%; }
   .searchInput { width: 100%; }
   .searchInput:focus { width: 100%; }
-
-  /* 좁은 화면에서 입력창이 동그란 버튼 2개+여백에 눌려 답답했던 것 — 독 좌우 여백·버튼 크기를 줄여
-     텍스트 입력 가로폭을 확보(탭 영역은 40px로 여전히 넉넉히 유지). */
-  .dock { padding: 10px 8px calc(10px + env(safe-area-inset-bottom, 0px)); }
-  .composer { gap: 6px; }
-  .actionsToggle, .composerSend { width: 40px; height: 40px; }
+  /* 독 padding·버튼 크기·gap은 이제 데스크톱 기본값과 동일(위 .dock/.composer/.actionsToggle/.composerSend
+     참조) — 모바일 전용 축소가 더 이상 필요 없어 여기 있던 중복 오버라이드 제거. */
 }
