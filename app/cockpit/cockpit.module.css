@@ -143,18 +143,12 @@
 .usage { margin-top: 9px; font-family: var(--mono); font-size: 10.5px;
   background: var(--panel-3); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 5px 9px;
   display: inline-block; }
-/* 배너의 사용량 경고 pill (감사 지적=호박색과 톤 맞추되 아이콘으로 구분) */
-.usagePill { background: rgba(224, 169, 59, 0.09); border-color: rgba(224, 169, 59, 0.42); color: var(--s-stuck); }
-
 /* 감사 결과 가시화 */
 .audit { margin-top: 9px; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono);
   padding: 3px 9px; border-radius: 999px; border: 1px solid transparent; }
 .auditOk { color: var(--brand); background: rgba(34,197,94,.07); border-color: rgba(34,197,94,.24); }
 .auditWarn { color: var(--s-stuck); font-weight: 700; background: rgba(224,169,59,.09); border-color: rgba(224,169,59,.4); }
 .auditNeutral { color: var(--text-dim); background: var(--panel-3); border-color: var(--line-soft); }
-/* 배너의 감사 지적 pill (경고=빨강과 구분되는 호박색) */
-.auditPill { background: rgba(224, 169, 59, 0.09); border-color: rgba(224, 169, 59, 0.42); color: var(--s-stuck); }
-
 /* 감사 diff 접기/펼치기 — command_text에 이미 실려온 diff를 그대로 라인별 렌더(서버 git 호출 없음) */
 .diffToggle { margin-top: 9px; font-family: var(--mono); font-size: 10.5px; font-weight: 600;
   background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 0; }

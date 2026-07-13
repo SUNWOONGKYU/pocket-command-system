@@ -398,25 +398,6 @@ export default function Cockpit() {
     return v?.warn ? { label: p.label } : null;
   }).filter(Boolean) as { label: string }[];
 
-  // 구독 사용량 경고 배너 — 80% 이상인 호스트(같은 계정 = 같은 사용량이라 host당 1번만)
-  const usageAlerts = (() => {
-    const seenHost = new Set<string>();
-    const out: { host: string; pct: number; resetTime: string }[] = [];
-    for (const a of agents) {
-      const u = a.usage_state;
-      if (!u?.fetched_at || !a.host) continue;
-      const ageSec = (now - new Date(u.fetched_at).getTime()) / 1000;
-      if (ageSec > USAGE_STALE_SEC) continue;
-      const pct = u.five_hour?.pct ?? 0;
-      if (pct < 80 || seenHost.has(a.host)) continue;
-      seenHost.add(a.host);
-      const resetTime = u.five_hour?.resets_at
-        ? new Date(u.five_hour.resets_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
-        : '—';
-      out.push({ host: a.host, pct, resetTime });
-    }
-    return out;
-  })();
 
   // ── 함대 상태 집계 — 헤더 스트립용 (전 에이전트를 파생상태로 분류) ──
   const fleet = (() => {
@@ -513,26 +494,9 @@ export default function Cockpit() {
           </div>
         )}
 
-        {(alerts.length > 0 || auditAlerts.length > 0 || usageAlerts.length > 0) && (
-          <div className={s.banner}>
-            {alerts.map((a) => (
-              <span className={s.bannerItem} key={'w-' + a.label}>
-                <span className={s.pip} style={{ background: STATUS_META[a.st].color }} />
-                {a.label} — {STATUS_META[a.st].label}
-              </span>
-            ))}
-            {auditAlerts.map((a) => (
-              <span className={`${s.bannerItem} ${s.auditPill}`} key={'a-' + a.label}>
-                🛡 {a.label} — 감사 지적
-              </span>
-            ))}
-            {usageAlerts.map((a) => (
-              <span className={`${s.bannerItem} ${s.usagePill}`} key={'u-' + a.host}>
-                ⚠ {a.host} 구독 사용량 {a.pct}% — {a.resetTime} 리셋
-              </span>
-            ))}
-          </div>
-        )}
+        {/* PO 지시(2026-07-13): 상단 배너에 개별 오류/감사지적/사용량 항목을 나열하던 걸 제거 —
+            해당 워커의 카드 자체에 이미 같은 정보가 표시돼 두 군데 중복이었다. 개수 집계
+            (.fleet의 '이상', 아래 '⚠ 이상' 필터 배지)는 alerts/auditAlerts를 계속 사용하므로 유지. */}
 
         {/* 빠른 필터 + 검색 — 문제만 보기·작업중만 보기·이름 검색 */}
         <div className={s.controls}>
