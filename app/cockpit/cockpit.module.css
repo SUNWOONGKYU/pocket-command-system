@@ -347,8 +347,8 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
 .composerInput:focus { border-color: var(--brand); box-shadow: var(--ring-brand); }
 .composerInput::placeholder { color: var(--text-faint); }
 /* 원형 전송 — 입력 없으면 무채색/비활성, 입력 생기면 브랜드색으로 채워지는 트랜지션 */
-/* 전송 버튼도 최소화 — 입력창 폭을 한 뼘 더 확보(34px, 여전히 원형 탭 영역 유지). */
-.composerSend { flex: none; width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
+/* 전송 버튼 재축소 — 입력창 폭을 더 확보(34px→28px). */
+.composerSend { flex: none; width: 28px; height: 28px; border-radius: 50%; border: none; cursor: pointer;
   background: var(--panel-3); color: var(--text-faint);
   display: flex; align-items: center; justify-content: center;
   transition: background .16s, color .16s, transform .1s; }
@@ -356,7 +356,7 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
 .composerSend:not(:disabled):hover { background: #26D065; transform: scale(1.06); }
 .composerSend:disabled { cursor: default; }
 /* 업로드 중 스피너(전송 버튼 안) */
-.sendSpin { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(138,151,168,0.35);
+.sendSpin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(138,151,168,0.35);
   border-top-color: var(--brand); animation: sendSpin 0.7s linear infinite; }
 @keyframes sendSpin { to { transform: rotate(360deg); } }
 

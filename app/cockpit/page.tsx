@@ -1009,7 +1009,7 @@ export default function Cockpit() {
                 >
                   {uploading
                     ? <span className={s.sendSpin} aria-hidden="true" />
-                    : <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M3 20.5v-6l8-2-8-2v-6l19 8z" /></svg>}
+                    : <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M3 20.5v-6l8-2-8-2v-6l19 8z" /></svg>}
                 </button>
               </div>
             </>
