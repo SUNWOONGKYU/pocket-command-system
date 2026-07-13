@@ -63,3 +63,8 @@ scripts/*.local.txt
 
 # Supabase CLI 로컬 상태 캐시(버전 포인터 등 — 실행할 때마다 갱신되는 도구 임시파일, 추적 불필요)
 /supabase/.temp/
+
+# 외부 용병 CLI(codex/grok 등) 로컬 상태 캐시 — 실행된 cwd에 생성된다. workdir가 레포 루트인
+# 워커(예: 에코)가 언젠가 codex/grok kind로 바뀌면 여기 바로 생길 수 있어 _attachments/와 동일 사유로 예방적 제외.
+/.codex/
+/.grok/

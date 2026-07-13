@@ -356,8 +356,48 @@ async function runClaudeApi(cmdText: string, a: Agent): Promise<RunResult> {
   } finally { current.abort = null; }
 }
 
+// ── 외부 CLI 용병 어댑터(codex/grok) — Claude 계열이 아닌 별도 벤더 CLI를 워커로 편입.
+//   PO 지시(2026-07-13): 코덱스(OpenAI Codex CLI)·그록(xAI Grok CLI)을 각각 용병1·용병3으로 등록.
+//   제미나이(용병2)는 구글이 개인 무료 티어 Gemini CLI 헤드리스 지원을 중단하고 Antigravity(GUI 전용)로
+//   강제 이전시켜 현재 계정으론 실행 불가 — 코드 결함이 아니라 벤더 정책 변경. 재개 시 runGemini 참고해 추가.
+const EXTERNAL_GUARD =
+  '[안전수칙] 배정된 작업과 무관한 파일은 건드리지 마라. ' +
+  '특히 실거래·매매·주문 관련 코드/설정/상태파일(예: trader.py, 주문·체결 로직, 거래 DB)은 ' +
+  '절대 수정·실행하지 말고, 필요하면 읽기·검토만 하라. 작업 폴더 범위 안에서 요청받은 일만 수행하라.';
+
+async function runCodex(cmdText: string, a: Agent): Promise<RunResult> {
+  // codex exec: 인자로 프롬프트를 안 주면 stdin에서 읽는다 — claude와 동일하게 stdin 경유(멀티라인 truncation 방지).
+  // -o(--output-last-message)로 최종 답변만 임시 파일에 받아 진행로그·추론과정 잡음 없이 파싱.
+  const outFile = path.join(os.tmpdir(), `codex-out-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
+  const prompt = `너는 '${a.name}'. 역할: ${a.role}. ${EXTERNAL_GUARD}\n\n${cmdText}`;
+  const r = await exec('codex', ['exec', '--sandbox', 'read-only', '-o', outFile], a.workdir || undefined, process.env, prompt);
+  let finalMsg = '';
+  try { finalMsg = fs.readFileSync(outFile, 'utf8').trim(); } catch { /* 파일 없으면 exec 전체 출력으로 폴백 */ }
+  try { fs.unlinkSync(outFile); } catch { /* 삭제 실패는 무시(임시파일 잔존 정도, 치명적 아님) */ }
+  return { ok: r.ok, output: finalMsg || r.output };
+}
+
+async function runGrok(cmdText: string, a: Agent): Promise<RunResult> {
+  // grok은 stdin을 못 읽어(TTY 기대) -p 인자로만 프롬프트를 받는다. Windows는 cmd.exe 경유 실행이라
+  // 인자에 실개행이 있으면 첫 줄에서 끊기는 기존 버그(claude가 stdin 전환으로 회피한 바로 그 문제)가
+  // 재현될 수 있어, 개행을 공백으로 치환해 단일 라인으로 안전하게 만든다(서식 손실은 감수).
+  const oneLine = (s: string) => s.replace(/\r?\n+/g, ' ').trim();
+  const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${EXTERNAL_GUARD} ${cmdText}`);
+  const r = await exec('grok', ['-p', prompt, '-d', a.workdir || process.cwd()], a.workdir || undefined, process.env);
+  // grok -p 는 JSONL(줄마다 {role,content}) — 마지막 assistant 줄의 content가 최종 답변.
+  try {
+    const lines = r.output.split('\n').map((l) => l.trim()).filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const ev = JSON.parse(lines[i]);
+      if (ev?.role === 'assistant' && typeof ev.content === 'string') return { ok: r.ok, output: ev.content };
+    }
+  } catch { /* JSONL 파싱 실패(구버전·형식변경 등) — 전체 출력 그대로 폴백 */ }
+  return r;
+}
+
 const ADAPTERS: Record<string, (c: string, a: Agent) => Promise<RunResult>> = {
   python: runPython, claude_code: runClaudeCode, claude_api: runClaudeApi,
+  codex: runCodex, grok: runGrok,
 };
 
 // ── 하트비트 ───────────────────────────────────────────────────
