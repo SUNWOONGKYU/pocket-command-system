@@ -319,7 +319,7 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
 .msgAct:disabled { opacity: 0.4; cursor: default; }
 
 /* 슬림 단일 바 컴포저 — ⚡📎 세로 스택(폭 절약) + 둥근 입력필드 + 원형 전송 */
-.composer { display: flex; align-items: flex-end; gap: 6px; }
+.composer { display: flex; align-items: flex-end; gap: 5px; }
 /* ⚡📎가 나란히(가로) 있으면 버튼 2개 폭을 차지해 입력창이 좁아진다 — 세로로 쌓아 버튼 1개 폭만 씀. */
 .composerLeftStack { flex: none; display: flex; flex-direction: column; gap: 3px; }
 /* ⚡ 액션 토글 — 급정지/재가동/종료를 액션시트로 수납(평소 공간 안 먹음). */
@@ -346,7 +346,8 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
 .composerInput:focus { border-color: var(--brand); box-shadow: var(--ring-brand); }
 .composerInput::placeholder { color: var(--text-faint); }
 /* 원형 전송 — 입력 없으면 무채색/비활성, 입력 생기면 브랜드색으로 채워지는 트랜지션 */
-.composerSend { flex: none; width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+/* 전송 버튼도 최소화 — 입력창 폭을 한 뼘 더 확보(34px, 여전히 원형 탭 영역 유지). */
+.composerSend { flex: none; width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
   background: var(--panel-3); color: var(--text-faint);
   display: flex; align-items: center; justify-content: center;
   transition: background .16s, color .16s, transform .1s; }
@@ -354,7 +355,7 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
 .composerSend:not(:disabled):hover { background: #26D065; transform: scale(1.06); }
 .composerSend:disabled { cursor: default; }
 /* 업로드 중 스피너(전송 버튼 안) */
-.sendSpin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(138,151,168,0.35);
+.sendSpin { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(138,151,168,0.35);
   border-top-color: var(--brand); animation: sendSpin 0.7s linear infinite; }
 @keyframes sendSpin { to { transform: rotate(360deg); } }
 
