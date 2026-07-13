@@ -359,11 +359,19 @@ async function runClaudeApi(cmdText: string, a: Agent): Promise<RunResult> {
 // ── 외부 CLI 용병 어댑터(codex/grok/gemini) — Claude 계열이 아닌 별도 벤더 CLI를 워커로 편입.
 //   PO 지시(2026-07-13): 코덱스(OpenAI Codex CLI)·그록(xAI Grok CLI)·제미나이(Gemini CLI)를
 //   각각 용병1·용병2·용병3으로 비서관 밑에 배치.
-//   제미나이는 구글이 개인 무료 티어 Gemini CLI 헤드리스 지원을 중단하고 Antigravity(GUI 전용)로
-//   강제 이전시켜 현재 계정으론 자동 실행 불가(벤더 정책 변경, 코드 결함 아님) — PO 지시: API 폴백 절대
-//   금지, CLI/Antigravity 수동 실행만 허용. runGemini는 그래서 실제 실행 대신 즉시 실패 응답만 반환한다
-//   (등록을 아예 안 하면 ADAPTERS[kind]가 undefined → runClaudeApi로 조용히 폴백해 Gemini인 척 Claude가
-//   대신 도는 오작동이 생기므로, 명시 등록으로 그 폴백 경로 자체를 막는다).
+//   제미나이는 애초 gemini CLI의 기본 개인 로그인(oauth-personal, 무료 개인 Code Assist 등급)으로는
+//   구글이 헤드리스 실행을 막아놔 자동 실행이 불가했었다. PO 지시(2026-07-13, "API로 안 된다고
+//   하니까 API로 하라")로 GEMINI_API_KEY 인증 경로로 전환 — runGemini는 그래서 이제 codex/grok과
+//   동일하게 실제 실행한다(등록만 해두고 즉시 실패시키던 이전 방식 폐기). PO 개인 Antigravity/gemini
+//   CLI 로그인 세션(사용자 홈 디렉터리의 ~/.gemini)과는 절대 안 섞이도록 워커 전용 격리 HOME에서만
+//   돈다(아래 GEMINI_HOME).
+//   ⚠ 실측(2026-07-13): 현재 워커 환경변수의 GEMINI_API_KEY는 무료 티어 키 — 요청 시
+//   "generativelanguage.googleapis.com/generate_content_free_tier_requests" 쿼터(5회) 초과로
+//   30~90초 재시도가 걸리며 최종적으론 성공 응답을 받았다(gemini CLI 자체 내장 재시도). 결과는
+//   오되 지연이 크므로, 유료 키로 교체되기 전까진 다른 용병 대비 응답이 느릴 수 있음을 감안할 것.
+//   ADAPTERS에 kind별 어댑터가 명시 등록돼 있어야 하는 이유는 여전히 유효 — 미등록 kind는
+//   ADAPTERS[kind]가 undefined → runClaudeApi로 조용히 폴백해 다른 벤더인 척 Claude가 대신 도는
+//   오작동이 생기기 때문.
 const EXTERNAL_GUARD =
   '[안전수칙] 배정된 작업과 무관한 파일은 건드리지 마라. ' +
   '특히 실거래·매매·주문 관련 코드/설정/상태파일(예: trader.py, 주문·체결 로직, 거래 DB)은 ' +
@@ -415,15 +423,30 @@ async function runGrok(cmdText: string, a: Agent): Promise<RunResult> {
   return r;
 }
 
-async function runGemini(_cmdText: string, a: Agent): Promise<RunResult> {
-  // 구글이 개인 무료 티어 Gemini CLI 헤드리스 지원을 끊고 Antigravity(GUI 전용)로 강제 이전시켜
-  // 현재 계정으론 자동 실행이 불가하다. PO 지시: API로 대신 돌리는 것도 금지 — 실행이 필요할 때마다
-  // PO가 Antigravity에서 수동으로 돌린다. 그래서 여기선 시도조차 하지 않고 바로 실패를 알린다.
-  return {
-    ok: false,
-    output: `⛔ ${a.name}(Gemini CLI)는 자동 실행 불가 — 구글 정책 변경으로 무료 티어 헤드리스 CLI 지원 중단, ` +
-      'Antigravity(GUI 전용)로 강제 이전됨. API 폴백은 PO 지시로 금지. PO가 Antigravity에서 수동 실행 필요.',
-  };
+// gemini CLI 전용 격리 HOME(레포 밖) — PO 개인 Antigravity/gemini 로그인(~/.gemini, oauth-personal)과
+// 절대 안 섞이게 분리. 이 HOME엔 oauth_creds.json이 없어 GEMINI_API_KEY 인증 경로로 자동 진입한다
+// (실측 확인: 같은 격리 HOME + API 키로 -p 헤드리스 정상 응답. 단 무료 티어 쿼터로 재시도 지연 있음 — 위 주석 참고).
+const GEMINI_HOME = 'C:/Dev/_mercenary_sandbox/용병2-home';
+
+async function runGemini(cmdText: string, a: Agent): Promise<RunResult> {
+  fs.mkdirSync(GEMINI_HOME, { recursive: true });
+  // grok과 동일한 이유(Windows cmd.exe 멀티라인 인자 truncation 방지) — 개행을 공백으로.
+  const oneLine = (s: string) => s.replace(/\r?\n+/g, ' ').trim();
+  const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${EXTERNAL_GUARD} ${cmdText}`);
+  const env = { ...externalCliEnv(), HOME: GEMINI_HOME, USERPROFILE: GEMINI_HOME };
+  // --approval-mode plan: codex의 `--sandbox read-only`와 동급인 하드 read-only 게이트
+  // (편집·실행 툴 자체가 막힘, 프롬프트 준수에만 의존하는 소프트 가드가 아님).
+  const r = await exec(
+    'gemini',
+    ['-p', prompt, '--skip-trust', '--approval-mode', 'plan', '-o', 'json'],
+    a.workdir || undefined,
+    env,
+  );
+  try {
+    const parsed = JSON.parse(r.output);
+    if (typeof parsed?.response === 'string') return { ok: r.ok, output: parsed.response };
+  } catch { /* JSON 파싱 실패(구버전·형식변경 등) — 전체 출력 그대로 폴백 */ }
+  return r;
 }
 
 const ADAPTERS: Record<string, (c: string, a: Agent) => Promise<RunResult>> = {
