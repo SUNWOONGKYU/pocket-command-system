@@ -55,3 +55,11 @@ docs/데몬워커-편제-운영지식.md
 # 운영 전용 스크립트·로컬 목록 (실PC명·실경로·팀 상세 — 공개본 제외)
 /scripts/_ops/
 scripts/*.local.txt
+
+# 콕핏 첨부파일 — 워커(agent-runner.ts downloadAttachments)가 태스크 처리 중 이 workdir 하위에
+# 내려받는 PO 업로드 원본. 에코처럼 workdir가 레포 루트인 워커는 이 폴더가 레포 루트에 바로 생기므로
+# 반드시 제외(사용자 실데이터가 공개 repo에 실수로 커밋되는 것 방지).
+/_attachments/
+
+# Supabase CLI 로컬 상태 캐시(버전 포인터 등 — 실행할 때마다 갱신되는 도구 임시파일, 추적 불필요)
+/supabase/.temp/
