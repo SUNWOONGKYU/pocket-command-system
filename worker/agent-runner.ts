@@ -440,20 +440,34 @@ const GEMINI_FREE_TIER_RPM = 5;
 const GEMINI_WINDOW_MS = 60_000;
 const geminiCallLog: number[] = [];
 
+// 대기 중 stop 신호(current.killed)가 오면 최대 1초 안에 반응해 대기를 끊는다 — 이게 없으면
+// 쿼터 대기(최대 ~60초)를 다 채운 뒤에야 gemini를 1회 실행하고서야 중단 처리되던 문제(감사 466a5948 지적).
+const KILL_CHECK_MS = 1000;
+
 async function waitForGeminiQuota(): Promise<void> {
   for (;;) {
+    if (current.killed) return;
     const now = Date.now();
     while (geminiCallLog.length && now - geminiCallLog[0] >= GEMINI_WINDOW_MS) geminiCallLog.shift();
     if (geminiCallLog.length < GEMINI_FREE_TIER_RPM) { geminiCallLog.push(now); return; }
     const waitMs = GEMINI_WINDOW_MS - (now - geminiCallLog[0]) + 250; // 창 경계 오차 여유 250ms
     console.log(`[gemini] 무료 티어 분당 ${GEMINI_FREE_TIER_RPM}회 한도 도달 — ${Math.ceil(waitMs / 1000)}초 대기 후 재시도`);
-    await new Promise((r) => setTimeout(r, waitMs));
+    let remaining = waitMs;
+    while (remaining > 0 && !current.killed) {
+      const chunk = Math.min(remaining, KILL_CHECK_MS);
+      await new Promise((r) => setTimeout(r, chunk));
+      remaining -= chunk;
+    }
+    if (current.killed) return;
   }
 }
 
 async function runGemini(cmdText: string, a: Agent): Promise<RunResult> {
   fs.mkdirSync(GEMINI_HOME, { recursive: true });
   await waitForGeminiQuota();
+  // 대기 중 중단됐으면 gemini를 실행하지 않고 즉시 리턴 — 최종 출력은 pickAndRun이 current.killed를
+  // 보고 어차피 '⛔ 사용자 중단'으로 덮어쓰므로 여기 output 텍스트 자체는 의미 없음(호출 생략이 핵심).
+  if (current.killed) return { ok: false, output: '⛔ 쿼터 대기 중 중단' };
   // grok과 동일한 이유(Windows cmd.exe 멀티라인 인자 truncation 방지) — 개행을 공백으로.
   const oneLine = (s: string) => s.replace(/\r?\n+/g, ' ').trim();
   const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${EXTERNAL_GUARD} ${cmdText}`);
