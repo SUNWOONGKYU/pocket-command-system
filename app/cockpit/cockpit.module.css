@@ -406,4 +406,10 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
   .search { margin-left: 0; width: 100%; }
   .searchInput { width: 100%; }
   .searchInput:focus { width: 100%; }
+
+  /* 좁은 화면에서 입력창이 동그란 버튼 2개+여백에 눌려 답답했던 것 — 독 좌우 여백·버튼 크기를 줄여
+     텍스트 입력 가로폭을 확보(탭 영역은 40px로 여전히 넉넉히 유지). */
+  .dock { padding: 10px 8px calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .composer { gap: 6px; }
+  .actionsToggle, .composerSend { width: 40px; height: 40px; }
 }
