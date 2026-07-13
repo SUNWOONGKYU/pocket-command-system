@@ -85,11 +85,12 @@ drop policy if exists "tasks read" on tasks;
 create policy "tasks read" on tasks for select using (true);
 -- (insert/update 는 service_role 키가 RLS를 우회하므로 별도 정책 불필요)
 
--- ---------- 시드: 오케스트레이터 + 워커(NATO 순차) ----------
+-- ---------- 시드: 워커(NATO 순차) ----------
 -- 워커 이름 원칙: NATO 부호로 순차 생성 (알파 → 브라보 → 찰리 → 델타 …). 한 PC = 한 중대.
 -- 워커를 늘리려면 다음 NATO 이름으로 행을 추가하고, 해당 PC에서 AGENT_NAME=<이름> npm run worker 로 띄운다.
+-- 오케스트레이터(자연어 명령 라우터)는 2026-07-13 PO 지시로 은퇴(배정 정확도 저조 + 텔레그램 자연어
+-- 라우팅 제거로 호출부 소멸) — 신규 시드에서 제외. 명령 발행은 콕핏 탭 지정 방식으로 직접 배정.
 insert into agents (name, role, squad, kind) values
-  ('오케스트레이터(참모장)', '총괄 지휘 · 작업 배분',  '지휘부', 'orchestrator'),
   ('알파',           '코드 작성 · 디버깅',     '1중대',  'claude_code'),
   ('브라보',         '문서 정리 · 요약 · 교정', '1중대',  'claude_code')
 on conflict (name) do nothing;

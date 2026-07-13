@@ -1,8 +1,9 @@
 // 텔레그램 Webhook 수신 → 조회 전용 응답만.
 // PO 지시(2026-07-13): 텔레그램은 보는 용도로만 사용. 명령 입력(자연어 라우팅/직접지정/브로드캐스트/
 // 워커제어/세션리셋)은 전부 막고 콕핏 대시보드로 유도한다 — 텔레그램발 자연어 라우팅이 오배정의 원인이었음.
-// 명령 발행은 콕핏(app/api/command/route.ts)에서만 — 오케스트레이터(lib/orchestrator.ts)는 이 경로가
-// 없어지며 호출부가 사라졌다(코드는 향후 재활성화 대비로 남겨둠).
+// 명령 발행은 콕핏(app/api/command/route.ts)에서만 — 오케스트레이터는 이 경로가 없어지며 호출부가
+// 사라졌고, 배정 정확도도 저조했던 터라 PO 지시로 완전 은퇴(lib/orchestrator.ts 삭제, agents 행 삭제,
+// config/projects.local.json 카드 제거).
 // 텔레그램 봇 설정: scripts/set-webhook.ts 로 이 경로를 등록한다.
 //   https://<배포도메인>/api/telegram
 
