@@ -468,10 +468,6 @@ export default function Cockpit() {
               <span className={s.fleetSub}>내 프로젝트 {PROJECTS.filter((p) => !p.meta).length}개</span>
             </div>
           </div>
-          <div className={s.fleetStat} style={{ '--fc': 'var(--s-working)' } as CSSProperties}>
-            <span className={s.fleetPip} /><span className={s.fleetNum}>{fleet.working}</span>
-            <div className={s.fleetMeta}><span className={s.fleetLabel}>작업중</span></div>
-          </div>
           <div className={s.fleetStat} style={{ '--fc': 'var(--s-idle)' } as CSSProperties}>
             <span className={s.fleetPip} /><span className={s.fleetNum}>{fleet.idle}</span>
             <div className={s.fleetMeta}><span className={s.fleetLabel}>대기</span></div>
