@@ -441,7 +441,7 @@ const GEMINI_WINDOW_MS = 60_000;
 const geminiCallLog: number[] = [];
 
 // 대기 중 stop 신호(current.killed)가 오면 최대 1초 안에 반응해 대기를 끊는다 — 이게 없으면
-// 쿼터 대기(최대 ~60초)를 다 채운 뒤에야 gemini를 1회 실행하고서야 중단 처리되던 문제(감사 466a5948 지적).
+// 쿼터 대기(최대 ~60초)를 다 채운 뒤에야 gemini를 1회 실행하고서야 중단 처리되던 문제(감사 d90c0fb9 지적).
 const KILL_CHECK_MS = 1000;
 
 async function waitForGeminiQuota(): Promise<void> {
