@@ -622,8 +622,8 @@ export default function Cockpit() {
                         <span
                           className={s.chip}
                           key={m.name}
-                          style={{ borderColor: c + '55', cursor: 'pointer', background: activeChip ? c + '22' : undefined, outline: activeChip ? `1px solid ${c}` : undefined }}
-                          title={`${m.name} · ${m.role} — 탭하면 이 역할에게 지시`}
+                          style={{ borderColor: c, cursor: 'pointer', background: activeChip ? c + '33' : c + '16', outline: activeChip ? `1px solid ${c}` : undefined }}
+                          title={`${m.name} — 탭하면 이 역할에게 지시`}
                           onClick={(e) => { e.stopPropagation(); setSel(p.id); setSelAgent(m.name); setTimeout(() => inputRef.current?.focus(), 50); }}
                         >
                           <span className={s.pip} style={{ background: c }} />{m.role}{m.model === 'opus' ? ' ⬥' : ''}
