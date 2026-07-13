@@ -250,10 +250,12 @@
 .sent, .recv {
   position: relative; animation: bubbleIn 0.18s ease both; font-family: var(--body);
 }
-.sent { align-self: flex-end; max-width: 84%; background: #2A6DB5; color: #fff;
+/* 말풍선 max-width — 컨테이너(.cockpit)를 100%로 넓혀도 말풍선 자체는 이 값에 별도로 갇혀 있었다.
+   장문(감사 대응 등 여러 줄 텍스트)이 화면을 거의 다 쓰도록 96%로 확장 — 화면 활용도 최대화. */
+.sent { align-self: flex-end; max-width: 96%; background: #2A6DB5; color: #fff;
   border-radius: 16px 16px 5px 16px; padding: 9px 13px 7px; font-size: 13.5px; line-height: 1.5;
   white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow-y: auto; box-shadow: var(--elev-1); }
-.recv { align-self: flex-start; max-width: 90%; background: var(--panel-2); color: var(--text);
+.recv { align-self: flex-start; max-width: 96%; background: var(--panel-2); color: var(--text);
   border: 1px solid var(--line); border-radius: 16px 16px 16px 5px; padding: 9px 13px 7px; font-size: 13px;
   line-height: 1.6; white-space: pre-wrap; word-break: break-word;
   max-height: 300px; overflow-y: auto; box-shadow: var(--elev-1); }
@@ -303,7 +305,7 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
 .msg:hover .msgActs, .msgActs:focus-within { opacity: 1; }
 
 /* 실행 중 진행 피드 — 최종 결과(.recv)보다 흐린 톤 + 점멸 커서로 '아직 진행 중'임을 표시. 폭 넘치면 스크롤 없이 말줄임. */
-.progress { align-self: flex-start; max-width: 90%; background: transparent; color: var(--text-faint);
+.progress { align-self: flex-start; max-width: 96%; background: transparent; color: var(--text-faint);
   border: 1px dashed var(--line-soft); border-radius: 16px 16px 16px 5px; padding: 8px 12px;
   font-size: 11.5px; line-height: 1.5; font-family: var(--mono);
   overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
