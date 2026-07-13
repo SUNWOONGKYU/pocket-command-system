@@ -366,9 +366,11 @@ async function runClaudeApi(cmdText: string, a: Agent): Promise<RunResult> {
 //   CLI 로그인 세션(사용자 홈 디렉터리의 ~/.gemini)과는 절대 안 섞이도록 워커 전용 격리 HOME에서만
 //   돈다(아래 GEMINI_HOME).
 //   ⚠ 실측(2026-07-13): 현재 워커 환경변수의 GEMINI_API_KEY는 무료 티어 키 — 요청 시
-//   "generativelanguage.googleapis.com/generate_content_free_tier_requests" 쿼터(5회) 초과로
-//   30~90초 재시도가 걸리며 최종적으론 성공 응답을 받았다(gemini CLI 자체 내장 재시도). 결과는
-//   오되 지연이 크므로, 유료 키로 교체되기 전까진 다른 용병 대비 응답이 느릴 수 있음을 감안할 것.
+//   "generativelanguage.googleapis.com/generate_content_free_tier_requests" 쿼터(분당 5회) 초과로
+//   30~90초 재시도가 걸리며 최종적으론 성공 응답을 받았다(gemini CLI 자체 내장 재시도). PO 지시
+//   (2026-07-13, "무료 티어 한도 내에서 작업하는 걸로 구현")로 초과 후 재시도에 의존하는 대신,
+//   호출 전에 분당 5회 한도 안에서만 보내도록 자체 스로틀(waitForGeminiQuota)을 앞단에 둬 애초에
+//   429를 유발하지 않는다 — 유료 키로 교체되기 전까지의 상시 대응책.
 //   ADAPTERS에 kind별 어댑터가 명시 등록돼 있어야 하는 이유는 여전히 유효 — 미등록 kind는
 //   ADAPTERS[kind]가 undefined → runClaudeApi로 조용히 폴백해 다른 벤더인 척 Claude가 대신 도는
 //   오작동이 생기기 때문.
@@ -428,8 +430,30 @@ async function runGrok(cmdText: string, a: Agent): Promise<RunResult> {
 // (실측 확인: 같은 격리 HOME + API 키로 -p 헤드리스 정상 응답. 단 무료 티어 쿼터로 재시도 지연 있음 — 위 주석 참고).
 const GEMINI_HOME = 'C:/Dev/_mercenary_sandbox/용병2-home';
 
+// ── 무료 티어 자체 쿼터 스로틀 ────────────────────────────────
+// 실측(2026-07-13) 쿼터 = 분당 5회(generate_content_free_tier_requests). 초과 요청을 그대로
+// 쏘고 gemini CLI의 429 재시도(30~90초)에 기대는 대신, 호출 직전에 최근 60초 창 안의 호출 수를
+// 세어 5회 미만일 때만 즉시 보내고 이미 5회면 가장 오래된 호출이 60초를 넘길 때까지 대기한다.
+// 프로세스 내 인메모리 카운터라 워커 재시작 시 리셋되지만, 이 워커는 한 번에 한 태스크만 처리하므로
+// (pickAndRun의 current.taskId 가드) 충분하다.
+const GEMINI_FREE_TIER_RPM = 5;
+const GEMINI_WINDOW_MS = 60_000;
+const geminiCallLog: number[] = [];
+
+async function waitForGeminiQuota(): Promise<void> {
+  for (;;) {
+    const now = Date.now();
+    while (geminiCallLog.length && now - geminiCallLog[0] >= GEMINI_WINDOW_MS) geminiCallLog.shift();
+    if (geminiCallLog.length < GEMINI_FREE_TIER_RPM) { geminiCallLog.push(now); return; }
+    const waitMs = GEMINI_WINDOW_MS - (now - geminiCallLog[0]) + 250; // 창 경계 오차 여유 250ms
+    console.log(`[gemini] 무료 티어 분당 ${GEMINI_FREE_TIER_RPM}회 한도 도달 — ${Math.ceil(waitMs / 1000)}초 대기 후 재시도`);
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+}
+
 async function runGemini(cmdText: string, a: Agent): Promise<RunResult> {
   fs.mkdirSync(GEMINI_HOME, { recursive: true });
+  await waitForGeminiQuota();
   // grok과 동일한 이유(Windows cmd.exe 멀티라인 인자 truncation 방지) — 개행을 공백으로.
   const oneLine = (s: string) => s.replace(/\r?\n+/g, ' ').trim();
   const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${EXTERNAL_GUARD} ${cmdText}`);
