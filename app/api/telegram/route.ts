@@ -35,7 +35,7 @@ export async function POST(req: Request) {
   // /명단 (/workers) : 조회 전용 — 워커 이름 목록
   if (text.trim() === '/명단' || text.trim() === '/workers') {
     const { data } = await supabase.from('agents').select('name,kind');
-    const names = (data ?? []).filter((a) => a.kind !== 'orchestrator' && !a.name.endsWith('감사관')).map((a) => a.name);
+    const names = (data ?? []).filter((a) => !a.name.endsWith('감사관')).map((a) => a.name);
     await sendTelegram(chatId, `👥 워커 목록 (명령은 콕핏 대시보드에서)\n\n${names.join('\n')}`);
     return NextResponse.json({ ok: true });
   }

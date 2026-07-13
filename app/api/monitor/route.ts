@@ -34,7 +34,6 @@ export async function GET() {
   const usageByHost = new Map<string, { names: string[]; pct: number; resetsAt: string; alerted: boolean }>();
 
   for (const a of agents as Agent[]) {
-    if (a.kind === 'orchestrator') continue; // 오케스트레이터는 워커가 없어 하트비트 없음 — 감시 제외
     const lastBeat = a.last_heartbeat_at ? new Date(a.last_heartbeat_at).getTime() : 0;
     const sinceBeat = (now - lastBeat) / 1000;
 
