@@ -356,21 +356,41 @@ async function runClaudeApi(cmdText: string, a: Agent): Promise<RunResult> {
   } finally { current.abort = null; }
 }
 
-// ── 외부 CLI 용병 어댑터(codex/grok) — Claude 계열이 아닌 별도 벤더 CLI를 워커로 편입.
-//   PO 지시(2026-07-13): 코덱스(OpenAI Codex CLI)·그록(xAI Grok CLI)을 각각 용병1·용병3으로 등록.
-//   제미나이(용병2)는 구글이 개인 무료 티어 Gemini CLI 헤드리스 지원을 중단하고 Antigravity(GUI 전용)로
-//   강제 이전시켜 현재 계정으론 실행 불가 — 코드 결함이 아니라 벤더 정책 변경. 재개 시 runGemini 참고해 추가.
+// ── 외부 CLI 용병 어댑터(codex/grok/gemini) — Claude 계열이 아닌 별도 벤더 CLI를 워커로 편입.
+//   PO 지시(2026-07-13): 코덱스(OpenAI Codex CLI)·그록(xAI Grok CLI)·제미나이(Gemini CLI)를
+//   각각 용병1·용병2·용병3으로 비서관 밑에 배치.
+//   제미나이는 구글이 개인 무료 티어 Gemini CLI 헤드리스 지원을 중단하고 Antigravity(GUI 전용)로
+//   강제 이전시켜 현재 계정으론 자동 실행 불가(벤더 정책 변경, 코드 결함 아님) — PO 지시: API 폴백 절대
+//   금지, CLI/Antigravity 수동 실행만 허용. runGemini는 그래서 실제 실행 대신 즉시 실패 응답만 반환한다
+//   (등록을 아예 안 하면 ADAPTERS[kind]가 undefined → runClaudeApi로 조용히 폴백해 Gemini인 척 Claude가
+//   대신 도는 오작동이 생기므로, 명시 등록으로 그 폴백 경로 자체를 막는다).
 const EXTERNAL_GUARD =
   '[안전수칙] 배정된 작업과 무관한 파일은 건드리지 마라. ' +
   '특히 실거래·매매·주문 관련 코드/설정/상태파일(예: trader.py, 주문·체결 로직, 거래 DB)은 ' +
   '절대 수정·실행하지 말고, 필요하면 읽기·검토만 하라. 작업 폴더 범위 안에서 요청받은 일만 수행하라.';
+
+// 감사(1df393f5) 경미-2 조치: claude_code가 childEnv에서 ANTHROPIC 키를 delete하는 것과 달리
+// codex/grok은 process.env 전체를 그대로 물려받아 SUPABASE_SERVICE_ROLE_KEY·TELEGRAM_BOT_TOKEN 등이
+// 신뢰 범위 밖 벤더 CLI 프로세스에 노출됐다. 그 CLI들은 DB/텔레그램에 접근할 이유가 없으므로 스트립.
+function externalCliEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.SUPABASE_SERVICE_ROLE_KEY;
+  delete env.SUPABASE_URL;
+  delete env.NEXT_PUBLIC_SUPABASE_URL;
+  delete env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  delete env.TELEGRAM_BOT_TOKEN;
+  delete env.TELEGRAM_ALERT_CHAT_ID;
+  delete env.ANTHROPIC_API_KEY;
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  return env;
+}
 
 async function runCodex(cmdText: string, a: Agent): Promise<RunResult> {
   // codex exec: 인자로 프롬프트를 안 주면 stdin에서 읽는다 — claude와 동일하게 stdin 경유(멀티라인 truncation 방지).
   // -o(--output-last-message)로 최종 답변만 임시 파일에 받아 진행로그·추론과정 잡음 없이 파싱.
   const outFile = path.join(os.tmpdir(), `codex-out-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
   const prompt = `너는 '${a.name}'. 역할: ${a.role}. ${EXTERNAL_GUARD}\n\n${cmdText}`;
-  const r = await exec('codex', ['exec', '--sandbox', 'read-only', '-o', outFile], a.workdir || undefined, process.env, prompt);
+  const r = await exec('codex', ['exec', '--sandbox', 'read-only', '-o', outFile], a.workdir || undefined, externalCliEnv(), prompt);
   let finalMsg = '';
   try { finalMsg = fs.readFileSync(outFile, 'utf8').trim(); } catch { /* 파일 없으면 exec 전체 출력으로 폴백 */ }
   try { fs.unlinkSync(outFile); } catch { /* 삭제 실패는 무시(임시파일 잔존 정도, 치명적 아님) */ }
@@ -383,7 +403,7 @@ async function runGrok(cmdText: string, a: Agent): Promise<RunResult> {
   // 재현될 수 있어, 개행을 공백으로 치환해 단일 라인으로 안전하게 만든다(서식 손실은 감수).
   const oneLine = (s: string) => s.replace(/\r?\n+/g, ' ').trim();
   const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${EXTERNAL_GUARD} ${cmdText}`);
-  const r = await exec('grok', ['-p', prompt, '-d', a.workdir || process.cwd()], a.workdir || undefined, process.env);
+  const r = await exec('grok', ['-p', prompt, '-d', a.workdir || process.cwd()], a.workdir || undefined, externalCliEnv());
   // grok -p 는 JSONL(줄마다 {role,content}) — 마지막 assistant 줄의 content가 최종 답변.
   try {
     const lines = r.output.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -395,9 +415,20 @@ async function runGrok(cmdText: string, a: Agent): Promise<RunResult> {
   return r;
 }
 
+async function runGemini(_cmdText: string, a: Agent): Promise<RunResult> {
+  // 구글이 개인 무료 티어 Gemini CLI 헤드리스 지원을 끊고 Antigravity(GUI 전용)로 강제 이전시켜
+  // 현재 계정으론 자동 실행이 불가하다. PO 지시: API로 대신 돌리는 것도 금지 — 실행이 필요할 때마다
+  // PO가 Antigravity에서 수동으로 돌린다. 그래서 여기선 시도조차 하지 않고 바로 실패를 알린다.
+  return {
+    ok: false,
+    output: `⛔ ${a.name}(Gemini CLI)는 자동 실행 불가 — 구글 정책 변경으로 무료 티어 헤드리스 CLI 지원 중단, ` +
+      'Antigravity(GUI 전용)로 강제 이전됨. API 폴백은 PO 지시로 금지. PO가 Antigravity에서 수동 실행 필요.',
+  };
+}
+
 const ADAPTERS: Record<string, (c: string, a: Agent) => Promise<RunResult>> = {
   python: runPython, claude_code: runClaudeCode, claude_api: runClaudeApi,
-  codex: runCodex, grok: runGrok,
+  codex: runCodex, grok: runGrok, gemini: runGemini,
 };
 
 // ── 하트비트 ───────────────────────────────────────────────────
