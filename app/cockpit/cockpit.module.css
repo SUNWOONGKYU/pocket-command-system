@@ -1,8 +1,8 @@
 /* 포트폴리오 지휘 콕핏 — 프로젝트 카드 그리드 + 탭 대상선택 + 하단 명령 독 (다크 지휘소 테마) */
 
-/* 넓은 화면(데스크톱 등)에서 좌우에 큰 빈 여백이 남던 것 — 고정폭(1220px) 대신 뷰포트 비율로 전환.
-   90vw(콘텐츠 90% · 여백 총 10% = 좌우 각 5%)로 화면 크기에 맞춰 항상 최대한 넓게 씀. */
-.cockpit { padding: 20px; max-width: 90vw; margin: 0 auto; padding-bottom: 168px; }
+/* 최대 폭 사용 — 퍼센트 여백(90vw) 대신 뷰포트 폭 그대로 쓰고, 좌우 여백은 padding(20px, 화면 크기와
+   무관한 고정값)만 남긴다. 화면이 넓을수록 콘텐츠가 그만큼 다 늘어나 데드 스페이스가 사실상 없다. */
+.cockpit { width: 100%; padding: 20px; padding-bottom: 168px; box-sizing: border-box; }
 
 .head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
 .head .count { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
@@ -128,7 +128,7 @@
   -webkit-backdrop-filter: blur(18px) saturate(1.1);
   box-shadow: 0 -8px 30px rgba(0,0,0,0.40);
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
-.dockInner { max-width: 90vw; margin: 0 auto; } /* 본문(.cockpit)과 동일 비율 — 카드·입력창 좌우 정렬 유지 */
+.dockInner { width: 100%; } /* .cockpit과 동일 전략(퍼센트 대신 고정 padding) — .dock의 16px 좌우 padding이 유일한 여백 */
 
 .hint { text-align: center; color: var(--text-faint); font-size: 12px; padding: 10px 0; }
 
