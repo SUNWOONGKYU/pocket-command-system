@@ -883,7 +883,7 @@ export default function Cockpit() {
                         </div>
                       )}
                       {t.result && (
-                        <div className={s.recv}>
+                        <div className={`${s.recv} ${t.assigned_agent?.endsWith('감사관') ? s.recvAuditor : ''}`}>
                           {t.result}
                           <span className={s.bubbleMeta}>
                             <span className={s.bTime}>{clockTime(t.updated_at)}</span>
@@ -925,7 +925,7 @@ export default function Cockpit() {
                     )}
                   </div>
                   <div className={s.taskCmd}>{t.command_text}</div>
-                  {t.result && <div className={s.taskResult}>{t.result}</div>}
+                  {t.result && <div className={`${s.taskResult} ${t.assigned_agent?.endsWith('감사관') ? s.taskResultAuditor : ''}`}>{t.result}</div>}
                 </div>
               ))}
             </div>
