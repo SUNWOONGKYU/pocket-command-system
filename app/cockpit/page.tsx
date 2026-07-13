@@ -401,14 +401,13 @@ export default function Cockpit() {
 
   // ── 함대 상태 집계 — 헤더 스트립용 (전 에이전트를 파생상태로 분류) ──
   const fleet = (() => {
-    let working = 0, idle = 0, alert = 0;
+    let working = 0, idle = 0;
     for (const a of agents) {
       const st = deriveStatus(a, now);
       if (st === 'working' || st === 'command') working++;
       else if (st === 'idle') idle++;
-      else alert++; // offline · error · stuck
     }
-    return { total: agents.length, working, idle, alert };
+    return { total: agents.length, working, idle };
   })();
 
   // 감사 지적 프로젝트 라벨 집합 (정렬·필터에서 재사용)
@@ -477,10 +476,6 @@ export default function Cockpit() {
             <span className={s.fleetPip} /><span className={s.fleetNum}>{fleet.idle}</span>
             <div className={s.fleetMeta}><span className={s.fleetLabel}>대기</span></div>
           </div>
-          <div className={s.fleetStat} style={{ '--fc': fleet.alert > 0 ? 'var(--s-offline)' : 'var(--line)' } as CSSProperties}>
-            <span className={s.fleetPip} /><span className={s.fleetNum}>{fleet.alert}</span>
-            <div className={s.fleetMeta}><span className={s.fleetLabel}>이상</span></div>
-          </div>
           <div className={s.fleetLive}>
             {live ? <><span className={s.livePulse} />LIVE</> : <span style={{ color: 'var(--s-stuck)' }}>◌ 오프라인</span>}
           </div>
@@ -495,8 +490,8 @@ export default function Cockpit() {
         )}
 
         {/* PO 지시(2026-07-13): 상단 배너에 개별 오류/감사지적/사용량 항목을 나열하던 걸 제거 —
-            해당 워커의 카드 자체에 이미 같은 정보가 표시돼 두 군데 중복이었다. 개수 집계
-            (.fleet의 '이상', 아래 '⚠ 이상' 필터 배지)는 alerts/auditAlerts를 계속 사용하므로 유지. */}
+            해당 워커의 카드 자체에 이미 같은 정보가 표시돼 두 군데 중복이었다. '이상' 개수도
+            .fleet 스트립과 아래 필터 배지 두 군데였던 걸 필터 배지 하나로 통일(fleet.alert 제거). */}
 
         {/* 빠른 필터 + 검색 — 문제만 보기·작업중만 보기·이름 검색 */}
         <div className={s.controls}>
