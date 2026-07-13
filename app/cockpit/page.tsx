@@ -968,18 +968,7 @@ export default function Cockpit() {
                 onChange={(e) => addFiles(e.target.files)}
               />
               <div className={s.composer}>
-                <button
-                  className={s.clipBtn}
-                  onClick={() => fileRef.current?.click()}
-                  disabled={files.length >= 5}
-                  aria-label="파일 첨부"
-                  title={files.length >= 5 ? '첨부는 최대 5개' : '파일 첨부'}
-                >
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                  </svg>
-                </button>
-                <div className={s.composerField}>
+                <div className={s.composerBar}>
                   <textarea
                     ref={inputRef}
                     className={s.composerInput}
@@ -1000,6 +989,17 @@ export default function Cockpit() {
                       }
                     }}
                   />
+                  <button
+                    className={s.clipBtn}
+                    onClick={() => fileRef.current?.click()}
+                    disabled={files.length >= 5}
+                    aria-label="파일 첨부"
+                    title={files.length >= 5 ? '첨부는 최대 5개' : '파일 첨부'}
+                  >
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                    </svg>
+                  </button>
                 </div>
                 <button
                   className={s.composerSend}
@@ -1009,7 +1009,7 @@ export default function Cockpit() {
                 >
                   {uploading
                     ? <span className={s.sendSpin} aria-hidden="true" />
-                    : <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M3 20.5v-6l8-2-8-2v-6l19 8z" /></svg>}
+                    : <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M3 20.5v-6l8-2-8-2v-6l19 8z" /></svg>}
                 </button>
               </div>
             </>
