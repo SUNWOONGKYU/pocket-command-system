@@ -1,0 +1,20 @@
+# Vercel 배포 업로드 제외 — .gitignore와 별개로 vercel CLI가 직접 참조하는 목록.
+# git 추적 여부와 무관하게, 배포 소스 번들에 절대 안 실려야 하는 로컬 전용/사용자 데이터.
+
+# 콕핏 첨부파일 — PO가 업로드한 원본(사진 등)이 워커 workdir(레포 루트)에 내려받힘.
+# Vercel엔 이 폴더를 쓰는 코드가 없고(서버는 Supabase Storage signed URL만 참조), 배포 번들에
+# 실릴 이유가 전혀 없다 — 불필요한 사용자 데이터 업로드 방지.
+/_attachments/
+
+# 운영 실데이터·로컬 전용 산출물 (.gitignore와 동일 항목 — 공개 repo엔 이미 안 들어가지만
+# vercel deploy는 gitignore를 항상 따르지 않을 수 있어 명시적으로 이중 차단)
+/_agentwork/
+/_bizwork/
+/_WorkLog/
+/_audit/
+/sessions/
+/logs/
+/config/*.local.json
+/scripts/_ops/
+scripts/*.local.txt
+scripts/.my-agents.txt
