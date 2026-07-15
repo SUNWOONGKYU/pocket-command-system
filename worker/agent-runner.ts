@@ -70,6 +70,14 @@ type RunResult = { ok: boolean; output: string };
 const current: { taskId: string | null; sourceChatId: number | null; child: ChildProcess | null; abort: AbortController | null; killed: boolean } =
   { taskId: null, sourceChatId: null, child: null, abort: null, killed: false };
 
+// ── 구독 한도 소진 보류 상태 ──────────────────────────────────
+//   claude CLI가 "You've hit your ... limit · resets ..."를 뱉으면 그건 감사/작업 결과가 아니라
+//   계정 한도 소진 신호다. 그걸 결과로 저장·전파(텔레그램·대응 적재)하지 말고, 리셋 시각까지
+//   작업 픽업 자체를 보류한다(작업은 큐에 되돌려 리셋 후 재시도). 프로세스 메모리에만 두면 충분 —
+//   재기동돼도 첫 픽업에서 한 번 더 감지해 다시 보류하므로 자기수복된다.
+let limitHoldUntil = 0;      // 이 시각(epoch ms)까지 작업 픽업 안 함
+let limitHoldNotified = 0;   // 이미 텔레그램으로 알린 holdUntil(중복 알림 방지)
+
 const IS_WIN = process.platform === 'win32';
 
 // ── 공용: 자식 프로세스 실행 (핸들을 current 에 등록해 kill 가능) ──
@@ -556,8 +564,14 @@ async function usageTick(kind: string) {
     // 중복경고 방지 플래그)이 매 60초마다 지워져, 80% 이상이 지속되는 동안 계속 재경고가 나간다.
     // 갈아끼우기 전에 기존 플래그를 읽어 새 usage 객체에 보존한다(조회 실패해도 best-effort로 계속 진행).
     const { data: cur } = await sb.from('agents').select('usage_state').eq('name', NAME).maybeSingle();
-    const prevAlerted = (cur?.usage_state as { alerted_for_reset?: string } | null)?.alerted_for_reset;
-    const merged = prevAlerted ? { ...usage, alerted_for_reset: prevAlerted } : usage;
+    const prev = (cur?.usage_state as { alerted_for_reset?: string; limit_hold_until?: string; limit_hold_msg?: string } | null) || {};
+    const merged: Record<string, unknown> = { ...usage };
+    if (prev.alerted_for_reset) merged.alerted_for_reset = prev.alerted_for_reset;
+    // 보류 마커는 아직 리셋 전이면 유지(usageTick이 60초마다 usage_state를 갈아끼워도 안 지워지게).
+    if (prev.limit_hold_until && Date.parse(prev.limit_hold_until) > Date.now()) {
+      merged.limit_hold_until = prev.limit_hold_until;
+      if (prev.limit_hold_msg) merged.limit_hold_msg = prev.limit_hold_msg;
+    }
     await sb.from('agents').update({ usage_state: merged }).eq('name', NAME);
   } catch { /* best-effort */ }
 }
@@ -687,9 +701,46 @@ async function downloadAttachments(taskId: string, atts: AttachmentMeta[], workd
   return lines.length ? `\n\n[첨부파일]\n${lines.join('\n')}` : '';
 }
 
+// ── 구독 한도 소진 감지 + 리셋 시각 파싱 ──────────────────────────
+//   claude CLI 실측 문구: "You've hit your weekly limit · resets Jul 17, 7pm (Asia/Seoul)"
+//                         "You've hit your session limit · resets 4:20pm (Asia/Seoul)"
+//   반환: 감지 시 { resetAt(epoch ms), raw }, 아니면 null.
+function detectLimit(output: string): { resetAt: number; raw: string } | null {
+  if (!output) return null;
+  const m = output.match(/hit your [\w.\- ]*?limit\s*[·:\-]?\s*resets\s+([^\n(]+)/i);
+  if (!m) return null;
+  return { resetAt: parseResetSpec(m[1]), raw: m[0].trim() };
+}
+
+// "Jul 17, 7pm" / "4:20pm" / "1:50am" → epoch ms (머신·메시지 모두 Asia/Seoul 이라 로컬 파싱).
+//   날짜 없는(세션 5시간) 리셋이 이미 지났으면 다음날로. 파싱 실패·과거값은 now+1h로 폴백.
+//   최소 now+5분 보장(리셋 직전 타이트 재시도 루프 방지).
+function parseResetSpec(spec: string): number {
+  const now = new Date();
+  const s = spec.trim();
+  const tm = s.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (!tm) return now.getTime() + 60 * 60 * 1000; // 폴백 1시간
+  let hour = parseInt(tm[1], 10) % 12;
+  if (/pm/i.test(tm[3])) hour += 12;
+  const min = tm[2] ? parseInt(tm[2], 10) : 0;
+  const target = new Date(now);
+  const dm = s.match(/([A-Za-z]{3})\s+(\d{1,2})/); // "Jul 17"
+  if (dm) {
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const mi = months.indexOf(dm[1].toLowerCase());
+    if (mi >= 0) { target.setMonth(mi); target.setDate(parseInt(dm[2], 10)); }
+  }
+  target.setHours(hour, min, 0, 0);
+  if (!dm && target.getTime() <= now.getTime()) target.setTime(target.getTime() + 24 * 60 * 60 * 1000);
+  return Math.max(target.getTime(), now.getTime() + 5 * 60 * 1000);
+}
+
 // ── 작업 픽업 + 실행 ───────────────────────────────────────────
 async function pickAndRun(self: Agent) {
   if (current.taskId) return; // 한 번에 한 작업
+
+  // 구독 한도 소진 보류 중이면 리셋 시각까지 작업을 집지 않는다(활동 전면 보류).
+  if (Date.now() < limitHoldUntil) return;
   const { data: task } = await sb.from('tasks').select('*')
     .eq('assigned_agent', NAME).eq('status', 'queued')
     .order('created_at', { ascending: true }).limit(1).maybeSingle();
@@ -741,6 +792,34 @@ async function pickAndRun(self: Agent) {
     const adapter = ADAPTERS[self.kind] || runClaudeApi;
     let r = await adapter(commandText, self);
     if (current.killed) r = { ok: false, output: '⛔ 사용자 중단' };
+
+    // ── 구독 한도 소진 게이트 ────────────────────────────────────
+    //   CLI가 결과 대신 "hit your ... limit · resets ..."를 뱉었으면 그건 감사/작업 산출물이 아니다.
+    //   결과로 저장하지 말고(=텔레그램·대응 자동적재로 쓰레기 전파 차단), 작업을 큐로 되돌려 리셋 후
+    //   재시도하게 하고, 리셋 시각까지 픽업을 전면 보류한다.
+    const lim = current.killed ? null : detectLimit(r.output);
+    if (lim) {
+      limitHoldUntil = lim.resetAt;
+      const resetIso = new Date(lim.resetAt).toISOString();
+      // 작업은 소비하지 않는다 — queued로 되돌려 보류 해제 후 같은 작업을 다시 집게 한다.
+      await sb.from('tasks').update({ status: 'queued' }).eq('id', task.id);
+      // 상태는 idle(에러 아님) + usage_state에 보류 정보 기록(콕핏 가시화·모니터 오경보 방지).
+      try {
+        const { data: cur } = await sb.from('agents').select('usage_state').eq('name', NAME).maybeSingle();
+        const prev = (cur?.usage_state as Record<string, unknown> | null) || {};
+        await sb.from('agents').update({
+          status: 'idle', current_task_id: null,
+          usage_state: { ...prev, limit_hold_until: resetIso, limit_hold_msg: lim.raw },
+        }).eq('name', NAME);
+      } catch { /* best-effort */ }
+      console.log(`[${NAME}] ⏸ 구독 한도 소진 — "${lim.raw}" → ${resetIso} 까지 활동 보류(작업 재큐, 감사의견·텔레그램·대응적재 생략).`);
+      // 보류 시작을 사람에게 1회만 알린다(같은 holdUntil로는 중복 안 보냄).
+      if (limitHoldNotified !== lim.resetAt) {
+        limitHoldNotified = lim.resetAt;
+        await telegram(task.source_chat_id, `⏸ <b>${escHtml(NAME!)}</b> 구독 한도 소진 — <code>${escHtml(lim.raw)}</code>\n리셋(${escHtml(resetIso)})까지 활동을 보류합니다. 그때 자동 재개됩니다.`);
+      }
+      return; // finally에서 current.taskId 해제됨
+    }
 
     await sb.from('tasks').update({ status: r.ok ? 'done' : 'failed', result: r.output }).eq('id', task.id);
     await sb.from('agents').update({ status: r.ok ? 'idle' : (current.killed ? 'idle' : 'error'), current_task_id: null }).eq('name', NAME);
