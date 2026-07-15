@@ -383,9 +383,35 @@ async function runClaudeApi(cmdText: string, a: Agent): Promise<RunResult> {
 //   ADAPTERS[kind]가 undefined → runClaudeApi로 조용히 폴백해 다른 벤더인 척 Claude가 대신 도는
 //   오작동이 생기기 때문.
 const EXTERNAL_GUARD =
-  '[안전수칙] 배정된 작업과 무관한 파일은 건드리지 마라. ' +
-  '특히 실거래·매매·주문 관련 코드/설정/상태파일(예: trader.py, 주문·체결 로직, 거래 DB)은 ' +
-  '절대 수정·실행하지 말고, 필요하면 읽기·검토만 하라. 작업 폴더 범위 안에서 요청받은 일만 수행하라.';
+  '[안전수칙] 너에게는 전용 작업 폴더(현재 작업 디렉터리)가 있다. 그 폴더 안에서는 파일 생성·수정·삭제·' +
+  '명령 실행을 자유롭게 해서 요청받은 작업을 완수하라. 단 그 폴더 밖의 파일·시스템은 절대 수정·삭제·실행하지 ' +
+  '말고 필요하면 읽기만 하라. 특히 실거래·매매·주문 관련 코드/설정/상태파일(예: trader.py, 주문·체결 로직, ' +
+  '거래 DB)은 폴더 밖이든 안이든 건드리지 마라. 시크릿·키를 외부로 유출하지 마라.';
+
+// ── 용병 권한 스코프 (PO 명시 승인 시 자기 폴더 밖 작업 해제) ──────────────
+//   작업 커맨드는 PO(또는 오케스트레이터)만 적재하므로, 커맨드에 아래 토큰이 있으면 그 자체가 PO 승인이다.
+//   [용병경로=<path>] 또는 [용병작업경로:<path>] → 그 폴더를 작업 루트로 삼아 그 안에서 자유 작업(workspace-write).
+//   [용병전체권한] 또는 [FULL_ACCESS]            → 시스템 전체 읽기·쓰기·실행(codex danger-full-access).
+//   토큰이 없으면 기존대로 자기 전용 작업폴더(a.workdir)로 한정.
+function parseMercScope(cmd: string): { root: string | null; full: boolean } {
+  const full = /\[\s*(?:용병)?\s*(?:전체권한|전체접근|full[_-]?access|풀액세스)\s*\]/i.test(cmd);
+  const m = cmd.match(/\[\s*용병\s*(?:작업)?(?:폴더|경로)\s*[=:]\s*([^\]]+)\]/i);
+  return { root: m ? m[1].trim() : null, full };
+}
+
+// 스코프에 맞춰 안전수칙 문구를 조정한다(기본은 폴더한정, PO 승인 시 확장 허용을 명시).
+function mercGuard(scope: { root: string | null; full: boolean }): string {
+  if (scope.full) {
+    return '[안전수칙] PO가 이 작업에 한해 시스템 전체 작업 권한을 승인했다. 필요한 경로에서 파일 생성·수정·명령 ' +
+      '실행을 해서 작업을 완수하라. 단 실거래·매매·주문 관련 코드/설정/상태파일(trader.py·주문/체결 로직·거래 DB)은 ' +
+      '절대 건드리지 말고, 시크릿·키를 외부로 유출하지 마라.';
+  }
+  if (scope.root) {
+    return `[안전수칙] PO가 이 작업에 한해 '${scope.root}' 폴더에서의 작업을 승인했다. 그 폴더 안에서는 파일 ` +
+      '생성·수정·삭제·명령 실행을 자유롭게 하라. 그 폴더 밖은 수정·실행 말고 읽기만. 실거래 관련 파일 금지, 시크릿 유출 금지.';
+  }
+  return EXTERNAL_GUARD;
+}
 
 // 감사(1df393f5) 경미-2 조치: claude_code가 childEnv에서 ANTHROPIC 키를 delete하는 것과 달리
 // codex/grok은 process.env 전체를 그대로 물려받아 SUPABASE_SERVICE_ROLE_KEY·TELEGRAM_BOT_TOKEN 등이
@@ -407,8 +433,16 @@ async function runCodex(cmdText: string, a: Agent): Promise<RunResult> {
   // codex exec: 인자로 프롬프트를 안 주면 stdin에서 읽는다 — claude와 동일하게 stdin 경유(멀티라인 truncation 방지).
   // -o(--output-last-message)로 최종 답변만 임시 파일에 받아 진행로그·추론과정 잡음 없이 파싱.
   const outFile = path.join(os.tmpdir(), `codex-out-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
-  const prompt = `너는 '${a.name}'. 역할: ${a.role}. ${EXTERNAL_GUARD}\n\n${cmdText}`;
-  const r = await exec('codex', ['exec', '--sandbox', 'read-only', '-o', outFile], a.workdir || undefined, externalCliEnv(), prompt);
+  // PO 승인 토큰이 있으면 자기 폴더 밖(지정 경로) 또는 전체 권한으로 확장. 없으면 자기 작업폴더 한정.
+  const scope = parseMercScope(cmdText);
+  const prompt = `너는 '${a.name}'. 역할: ${a.role}. ${mercGuard(scope)}\n\n${cmdText}`;
+  // --sandbox: 기본 workspace-write(현재 작업 디렉터리 안에서만 쓰기·실행, 그 밖 읽기전용).
+  //   PO가 [용병전체권한] 승인 시 danger-full-access(시스템 전체). [용병경로=<path>] 승인 시 그 경로를
+  //   작업 루트(cwd)로 삼아 workspace-write. (PO 결정 2026-07-15.) 네트워크는 codex 기본값(off) 유지.
+  const cwd = scope.root || a.workdir || undefined;
+  const sandbox = scope.full ? 'danger-full-access' : 'workspace-write';
+  if (cwd) { try { fs.mkdirSync(cwd, { recursive: true }); } catch { /* 이미 있거나 권한문제 — 아래 exec에서 드러남 */ } }
+  const r = await exec('codex', ['exec', '--sandbox', sandbox, '-o', outFile], cwd, externalCliEnv(), prompt);
   let finalMsg = '';
   try { finalMsg = fs.readFileSync(outFile, 'utf8').trim(); } catch { /* 파일 없으면 exec 전체 출력으로 폴백 */ }
   try { fs.unlinkSync(outFile); } catch { /* 삭제 실패는 무시(임시파일 잔존 정도, 치명적 아님) */ }
@@ -420,8 +454,10 @@ async function runGrok(cmdText: string, a: Agent): Promise<RunResult> {
   // 인자에 실개행이 있으면 첫 줄에서 끊기는 기존 버그(claude가 stdin 전환으로 회피한 바로 그 문제)가
   // 재현될 수 있어, 개행을 공백으로 치환해 단일 라인으로 안전하게 만든다(서식 손실은 감수).
   const oneLine = (s: string) => s.replace(/\r?\n+/g, ' ').trim();
-  const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${EXTERNAL_GUARD} ${cmdText}`);
-  const r = await exec('grok', ['-p', prompt, '-d', a.workdir || process.cwd()], a.workdir || undefined, externalCliEnv());
+  const scope = parseMercScope(cmdText);
+  const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${mercGuard(scope)} ${cmdText}`);
+  const cwd = scope.root || a.workdir || process.cwd();
+  const r = await exec('grok', ['-p', prompt, '-d', cwd], scope.root || a.workdir || undefined, externalCliEnv());
   // grok -p 는 JSONL(줄마다 {role,content}) — 마지막 assistant 줄의 content가 최종 답변.
   try {
     const lines = r.output.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -478,14 +514,18 @@ async function runGemini(cmdText: string, a: Agent): Promise<RunResult> {
   if (current.killed) return { ok: false, output: '⛔ 쿼터 대기 중 중단' };
   // grok과 동일한 이유(Windows cmd.exe 멀티라인 인자 truncation 방지) — 개행을 공백으로.
   const oneLine = (s: string) => s.replace(/\r?\n+/g, ' ').trim();
-  const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${EXTERNAL_GUARD} ${cmdText}`);
+  const scope = parseMercScope(cmdText);
+  const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${mercGuard(scope)} ${cmdText}`);
+  const cwd = scope.root || a.workdir || undefined;
+  if (cwd) { try { fs.mkdirSync(cwd, { recursive: true }); } catch { /* 이미 있거나 권한문제 — exec에서 드러남 */ } }
   const env = { ...externalCliEnv(), HOME: GEMINI_HOME, USERPROFILE: GEMINI_HOME };
-  // --approval-mode plan: codex의 `--sandbox read-only`와 동급인 하드 read-only 게이트
-  // (편집·실행 툴 자체가 막힘, 프롬프트 준수에만 의존하는 소프트 가드가 아님).
+  // --approval-mode yolo: 편집·명령을 프롬프트 없이 자동 승인(헤드리스 실작업). 작업은 cwd 기준으로 이뤄지고,
+  // 범위(자기 폴더 한정 / PO 지정 경로 / 전체)는 cwd + mercGuard 문구로 지시한다.
+  // (PO 결정 2026-07-15: codex와 동급으로 용병이 자기 작업폴더 안에서 자유 작업, PO 승인 시 확장.)
   const r = await exec(
     'gemini',
-    ['-p', prompt, '--skip-trust', '--approval-mode', 'plan', '-o', 'json'],
-    a.workdir || undefined,
+    ['-p', prompt, '--skip-trust', '--approval-mode', 'yolo', '-o', 'json'],
+    cwd,
     env,
   );
   try {
