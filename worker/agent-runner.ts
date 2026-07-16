@@ -104,6 +104,10 @@ function exec(cmd: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv
       //   뒤의 --resume <sid>가 문자열 속에 삼켜져 매 턴 새 세션(대화 맥락 전멸)이 됐다.
       //   \" 는 CommandLineToArgvW·MSVCRT 양쪽에서 동일하게 리터럴 따옴표다.
       //   인자 끝 백슬래시는 닫는 따옴표를 이스케이프하지 않게 두 배로 늘린다.
+      //   ★한계: 이건 "대상 프로그램"의 파서 기준이고, shell:true로 경유하는 cmd.exe는 \"를
+      //   몰라 모든 "를 인용 토글로 센다 — 값에 "와 <·>·&·| 가 함께 들면 cmd 단계에서 메타문자가
+      //   노출된다(실증 2026-07-17: gemini -p 가드 문구의 "…<경로>…"가 리다이렉션으로 해석돼 즉사).
+      //   따옴표 든 긴 텍스트(프롬프트 등)는 argv로 넘기지 말고 stdin으로 보내거나 따옴표를 치환할 것.
       const q = (s: string) =>
         '"' + String(s).replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1') + '"';
       const line = [cmd, ...args.map(q)].join(' ');
@@ -517,7 +521,10 @@ async function runGrok(cmdText: string, a: Agent): Promise<RunResult> {
   // grok은 stdin을 못 읽어(TTY 기대) -p 인자로만 프롬프트를 받는다. Windows는 cmd.exe 경유 실행이라
   // 인자에 실개행이 있으면 첫 줄에서 끊기는 기존 버그(claude가 stdin 전환으로 회피한 바로 그 문제)가
   // 재현될 수 있어, 개행을 공백으로 치환해 단일 라인으로 안전하게 만든다(서식 손실은 감수).
-  const oneLine = (s: string) => s.replace(/\r?\n+/g, ' ').trim();
+  // 큰따옴표도 홑따옴표로 치환 — cmd.exe는 \" 이스케이프를 몰라 프롬프트 속 "에서 인용이 풀리고
+  // <·>·& 같은 메타문자가 노출된다(gemini가 이 회귀로 전멸했던 것과 동일 경로, 2026-07-17 실증).
+  // 따옴표가 아예 없으면 인자 전체가 cmd 단계에서도 끝까지 인용 상태로 유지돼 안전하다.
+  const oneLine = (s: string) => s.replace(/\r?\n+/g, ' ').replace(/"/g, "'").trim();
   const scope = parseMercScope(cmdText);
   const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${mercGuard(scope)} ${cmdText}`);
   const cwd = scope.root || a.workdir || process.cwd();
@@ -576,10 +583,12 @@ async function runGemini(cmdText: string, a: Agent): Promise<RunResult> {
   // 대기 중 중단됐으면 gemini를 실행하지 않고 즉시 리턴 — 최종 출력은 pickAndRun이 current.killed를
   // 보고 어차피 '⛔ 사용자 중단'으로 덮어쓰므로 여기 output 텍스트 자체는 의미 없음(호출 생략이 핵심).
   if (current.killed) return { ok: false, output: '⛔ 쿼터 대기 중 중단' };
-  // grok과 동일한 이유(Windows cmd.exe 멀티라인 인자 truncation 방지) — 개행을 공백으로.
-  const oneLine = (s: string) => s.replace(/\r?\n+/g, ' ').trim();
   const scope = parseMercScope(cmdText);
-  const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${mercGuard(scope)} ${cmdText}`);
+  // 프롬프트는 codex처럼 stdin으로(-p 인자 없이 파이프 입력이 곧 프롬프트 — 실측 확인).
+  //   ★ -p argv 전달은 79bf28c(\" 이스케이프 전환)의 회귀로 전멸했었다(실증 2026-07-17 스모크):
+  //   cmd.exe는 \"를 몰라 가드 문구의 큰따옴표에서 인용이 풀리고, 이어지는 <경로> 꺾쇠가
+  //   입력 리다이렉션으로 해석돼 "지정된 파일을 찾을 수 없습니다"로 즉사. stdin이면 명령줄에
+  //   프롬프트가 아예 없어 인용·개행 문제 모두 원천 차단(멀티라인 서식도 보존).
   const cwd = scope.root || a.workdir || undefined;
   if (cwd) { try { fs.mkdirSync(cwd, { recursive: true }); } catch { /* 이미 있거나 권한문제 — exec에서 드러남 */ } }
   const env = { ...externalCliEnv(), HOME: GEMINI_HOME, USERPROFILE: GEMINI_HOME };
@@ -589,11 +598,13 @@ async function runGemini(cmdText: string, a: Agent): Promise<RunResult> {
   // ★주의(감사 de1c229a 지적): gemini에는 codex의 --sandbox 같은 OS 레벨 격리가 없다 — yolo는 자동 승인일 뿐
   //   cwd 밖 쓰기를 하드 차단하지 않으며, 경계는 전적으로 mercGuard 프롬프트 준수(소프트 가드)에 의존한다.
   //   따라서 [용병전체권한]급 확장 승인은 하드 격리가 있는 codex 쪽 용병에게 주는 것을 권장(운용 지침).
+  const prompt = `너는 '${a.name}'. 역할: ${a.role}. ${mercGuard(scope)}\n\n${cmdText}`;
   const r = await exec(
     'gemini',
-    ['-p', prompt, '--skip-trust', '--approval-mode', 'yolo', '-o', 'json'],
+    ['--skip-trust', '--approval-mode', 'yolo', '-o', 'json'],
     cwd,
     env,
+    prompt,
   );
   try {
     const parsed = JSON.parse(r.output);

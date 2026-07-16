@@ -30,7 +30,7 @@ if ($names.Count -eq 0) { Write-Host "이 PC로 등록된 워커가 없습니다
 # 상위모델(Opus) 지정 워커 — 전략역할(예: 사업총괄)은 여기서 CLAUDE_MODEL 을 명시해 상위모델로 띄운다.
 #   (감사관 이름('감사관') 자동 Opus 규칙은 f9f2ca73에서 제거됨 — 모델은 목록으로 단일 관리.)
 # 대상 이름은 운영 데이터라 추적 파일에 박지 않고 gitignored 로컬 목록에서 읽는다(공개본 분리).
-#   scripts/opus-workers.local.txt — 한 줄에 워커 이름 하나(없으면 감사관만 Opus).
+#   scripts/opus-workers.local.txt — 한 줄에 워커 이름 하나(없으면 상위모델 지정 없음).
 $opusListFile = Join-Path $PSScriptRoot "scripts/opus-workers.local.txt"
 $opusWorkers = if (Test-Path $opusListFile) {
   @(Get-Content -Path $opusListFile -Encoding UTF8 | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
