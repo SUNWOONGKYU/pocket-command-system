@@ -430,6 +430,22 @@ function externalCliEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+// codex 전용 격리 USERPROFILE(레포 밖) — codex Windows 샌드박스는 셋업 헬퍼를 띄울 때 USERPROFILE
+// 최상위 항목 전체를 읽기 루트로 열거해 base64 JSON을 "명령줄 인자"로 넘긴다(setup.rs payload).
+// 이 PC 실프로필(C:/Users/<user>, 최상위 700+개)은 그 페이로드가 46KB로 Windows 명령줄 한계
+// (32,767자)를 초과 → 헬퍼 기동이 "os error 206(파일 이름이 너무 깁니다)"으로 전멸, 용병1의 모든
+// 셸 실행이 막혀 있었다(실측 2026-07-16, ~/.codex/.sandbox/sandbox.*.log의 payload_len 참고.
+// codex 0.144.5에서도 미해결 — 업스트림 버그). 작은 격리 프로필이면 열거가 수 개로 줄어 정상 기동.
+// 인증·설정(auth.json 등)은 CODEX_HOME으로 실프로필의 ~/.codex를 그대로 쓴다(격리 HOME과 분리).
+// 부수 효과: 샌드박스 읽기 루트에서 PO 실프로필이 빠져 용병 격리가 오히려 강해진다. 단 샌드박스 안에서
+// 실프로필 하위(npm 전역 등) 읽기가 필요한 작업은 실패할 수 있음 — 필요해지면 PO 승인 후 경로 추가.
+const CODEX_ISOLATED_PROFILE = 'C:/Dev/_mercenary_sandbox/용병1-home';
+function codexEnv(): NodeJS.ProcessEnv {
+  const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+  try { fs.mkdirSync(CODEX_ISOLATED_PROFILE, { recursive: true }); } catch { /* 권한문제면 exec에서 드러남 */ }
+  return { ...externalCliEnv(), USERPROFILE: CODEX_ISOLATED_PROFILE, HOME: CODEX_ISOLATED_PROFILE, CODEX_HOME: codexHome };
+}
+
 async function runCodex(cmdText: string, a: Agent): Promise<RunResult> {
   // codex exec: 인자로 프롬프트를 안 주면 stdin에서 읽는다 — claude와 동일하게 stdin 경유(멀티라인 truncation 방지).
   // -o(--output-last-message)로 최종 답변만 임시 파일에 받아 진행로그·추론과정 잡음 없이 파싱.
@@ -443,7 +459,7 @@ async function runCodex(cmdText: string, a: Agent): Promise<RunResult> {
   const cwd = scope.root || a.workdir || undefined;
   const sandbox = scope.full ? 'danger-full-access' : 'workspace-write';
   if (cwd) { try { fs.mkdirSync(cwd, { recursive: true }); } catch { /* 이미 있거나 권한문제 — 아래 exec에서 드러남 */ } }
-  const r = await exec('codex', ['exec', '--sandbox', sandbox, '-o', outFile], cwd, externalCliEnv(), prompt);
+  const r = await exec('codex', ['exec', '--sandbox', sandbox, '-o', outFile], cwd, codexEnv(), prompt);
   let finalMsg = '';
   try { finalMsg = fs.readFileSync(outFile, 'utf8').trim(); } catch { /* 파일 없으면 exec 전체 출력으로 폴백 */ }
   try { fs.unlinkSync(outFile); } catch { /* 삭제 실패는 무시(임시파일 잔존 정도, 치명적 아님) */ }
