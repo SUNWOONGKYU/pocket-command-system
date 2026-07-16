@@ -403,6 +403,10 @@ const EXTERNAL_GUARD =
 //   [용병전체권한] 또는 [FULL_ACCESS]            → 시스템 전체 읽기·쓰기·실행(codex danger-full-access).
 //   토큰이 없으면 기존대로 자기 전용 작업폴더(a.workdir)로 한정.
 function parseMercScope(cmd: string): { root: string | null; full: boolean } {
+  // 인용-주입 방어(감사 de1c229a 보충 권고): 감사→대응 자동적재(respPrompt)는 감사 의견 전문을 커맨드에
+  // 인용하므로, 의견 속에 승인 토큰이 '인용'만 돼 있어도 진짜 승인으로 오인하면 권한상승이 된다.
+  // PO가 직접 적재하는 커맨드는 '[감사 대응]'으로 시작하지 않으므로 그 접두어면 토큰을 전부 무시한다.
+  if (cmd.trimStart().startsWith('[감사 대응]')) return { root: null, full: false };
   const full = /\[\s*(?:용병)?\s*(?:전체권한|전체접근|full[_-]?access|풀액세스)\s*\]/i.test(cmd);
   const m = cmd.match(/\[\s*용병\s*(?:작업)?(?:폴더|경로)\s*[=:]\s*([^\]]+)\]/i);
   return { root: m ? m[1].trim() : null, full };
@@ -434,7 +438,14 @@ function appendMercHistory(a: Agent, cmdText: string, ok: boolean, output: strin
     const one = (s: string, n: number) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
     const p = path.join(a.workdir, '_작업이력.md');
     fs.appendFileSync(p, `\n## ${new Date().toISOString()} — ${ok ? '완료' : '실패'}\n- 지시: ${one(cmdText, 300)}\n- 결과: ${one(output, 500)}\n`, 'utf8');
-    if (fs.statSync(p).size > 100_000) fs.writeFileSync(p, fs.readFileSync(p, 'utf8').slice(-60_000), 'utf8');
+    // 캡은 바이트 기준으로 통일(감사 c937f91f 권고 — 문자 slice는 한글 위주 이력에서 상한이 ~3배로 느슨해짐).
+    // 바이트 절단이 UTF-8 문자를 반토막 낼 수 있어 첫 줄바꿈 뒤부터 남긴다(엔트리 중간 절단도 완화).
+    if (fs.statSync(p).size > 100_000) {
+      const buf = fs.readFileSync(p);
+      const tail = buf.subarray(Math.max(0, buf.length - 60_000));
+      const nl = tail.indexOf(0x0a);
+      fs.writeFileSync(p, nl >= 0 ? tail.subarray(nl + 1) : tail);
+    }
   } catch { /* 이력은 부가 정보 — 실패 무시 */ }
 }
 
@@ -479,7 +490,11 @@ async function runCodex(cmdText: string, a: Agent): Promise<RunResult> {
   const prompt = `너는 '${a.name}'. 역할: ${a.role}. ${mercGuard(scope)}\n\n${cmdText}`;
   // --sandbox: 기본 workspace-write(현재 작업 디렉터리 안에서만 쓰기·실행, 그 밖 읽기전용).
   //   PO가 [용병전체권한] 승인 시 danger-full-access(시스템 전체). [용병경로=<path>] 승인 시 그 경로를
-  //   작업 루트(cwd)로 삼아 workspace-write. (PO 결정 2026-07-15.) 네트워크는 codex 기본값(off) 유지.
+  //   작업 루트(cwd)로 삼아 workspace-write. (PO 결정 2026-07-15.)
+  //   네트워크: workspace-write에선 codex 기본값(차단) 유지되나, danger-full-access는 샌드박스 자체를
+  //   해제하는 모드라 네트워크 차단도 보장되지 않는다(감사 de1c229a 지적으로 종전 "off 유지" 서술 정정).
+  //   → [용병전체권한]은 시크릿 파일(.env.local 등)이 있는 호스트에서 신중히 사용할 것(유출 경로:
+  //     디스크 직접 읽기 + 네트워크). env 스트립(externalCliEnv)은 이 모드의 파일 직접 읽기까지는 못 막는다.
   const cwd = scope.root || a.workdir || undefined;
   const sandbox = scope.full ? 'danger-full-access' : 'workspace-write';
   if (cwd) { try { fs.mkdirSync(cwd, { recursive: true }); } catch { /* 이미 있거나 권한문제 — 아래 exec에서 드러남 */ } }
@@ -562,7 +577,10 @@ async function runGemini(cmdText: string, a: Agent): Promise<RunResult> {
   const env = { ...externalCliEnv(), HOME: GEMINI_HOME, USERPROFILE: GEMINI_HOME };
   // --approval-mode yolo: 편집·명령을 프롬프트 없이 자동 승인(헤드리스 실작업). 작업은 cwd 기준으로 이뤄지고,
   // 범위(자기 폴더 한정 / PO 지정 경로 / 전체)는 cwd + mercGuard 문구로 지시한다.
-  // (PO 결정 2026-07-15: codex와 동급으로 용병이 자기 작업폴더 안에서 자유 작업, PO 승인 시 확장.)
+  // (PO 결정 2026-07-15: 용병이 자기 작업폴더 안에서 자유 작업, PO 승인 시 확장.)
+  // ★주의(감사 de1c229a 지적): gemini에는 codex의 --sandbox 같은 OS 레벨 격리가 없다 — yolo는 자동 승인일 뿐
+  //   cwd 밖 쓰기를 하드 차단하지 않으며, 경계는 전적으로 mercGuard 프롬프트 준수(소프트 가드)에 의존한다.
+  //   따라서 [용병전체권한]급 확장 승인은 하드 격리가 있는 codex 쪽 용병에게 주는 것을 권장(운용 지침).
   const r = await exec(
     'gemini',
     ['-p', prompt, '--skip-trust', '--approval-mode', 'yolo', '-o', 'json'],

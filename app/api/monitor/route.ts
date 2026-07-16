@@ -79,6 +79,9 @@ export async function GET() {
       ? new Date(info.resetsAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
       : '—';
     flagged.push(`⚠️ ${host} 구독 사용량 ${info.pct}% (5h 윈도) — ${resetTime} 리셋. 워커: ${info.names.join(', ')}`);
+    // 발송이 막혀 있으면 '알림 완료' 플래그도 남기지 않는다(감사 466a5948 경미-1) — 안 그러면 리셋 윈도
+    // 도중 알림을 켰을 때 이미 플래그된 host의 첫 경고가 억제된다. flagged(JSON 응답)에는 계속 노출.
+    if (ALERTS_DISABLED || !alertChat) continue;
     // 대표 1개가 아니라 이 host의 모든 워커 row에 플래그를 남겨야, 다음 cron에서 어느 row가 먼저 잡히든 안전하다.
     for (const a of agents as Agent[]) {
       if (a.host !== host) continue;
