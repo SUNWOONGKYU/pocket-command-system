@@ -97,7 +97,15 @@ function exec(cmd: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv
     const opts = { cwd: cwd || process.cwd(), env: env || process.env, stdio };
     let p: ChildProcess;
     if (IS_WIN) {
-      const q = (s: string) => '"' + String(s).replace(/"/g, '""') + '"';
+      // ★ 따옴표 이스케이프는 CMD식("")이 아니라 백슬래시식(\")으로 — claude가 .cmd 셔임에서
+      //   네이티브 claude.exe 런처로 바뀌며 인자 파싱이 CommandLineToArgvW 규칙이 됐는데,
+      //   그 규칙에선 ""가 인용 종료로 해석돼 따옴표 든 인자(예: 역할 문구 "안 깨뜨리기")가 쪼개진다.
+      //   실증 피해(2026-07-16 버즈랩): 쪼개진 조각 '깨뜨리기.'가 -p 위치 프롬프트로 끼어들고,
+      //   뒤의 --resume <sid>가 문자열 속에 삼켜져 매 턴 새 세션(대화 맥락 전멸)이 됐다.
+      //   \" 는 CommandLineToArgvW·MSVCRT 양쪽에서 동일하게 리터럴 따옴표다.
+      //   인자 끝 백슬래시는 닫는 따옴표를 이스케이프하지 않게 두 배로 늘린다.
+      const q = (s: string) =>
+        '"' + String(s).replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1') + '"';
       const line = [cmd, ...args.map(q)].join(' ');
       p = spawn(line, { ...opts, shell: true });
     } else {
