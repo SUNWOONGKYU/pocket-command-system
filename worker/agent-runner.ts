@@ -383,11 +383,19 @@ async function runClaudeApi(cmdText: string, a: Agent): Promise<RunResult> {
 //   ADAPTERS에 kind별 어댑터가 명시 등록돼 있어야 하는 이유는 여전히 유효 — 미등록 kind는
 //   ADAPTERS[kind]가 undefined → runClaudeApi로 조용히 폴백해 다른 벤더인 척 Claude가 대신 도는
 //   오작동이 생기기 때문.
+// 용병1 건의문(2026-07-16, CODEX_CLI_BLOCKERS_FOR_POCKET_COMMANDER.md) 조치 2건이 문구에 반영돼 있다:
+//   ① 폴더 밖 작업이 "영구 불가"가 아니라 PO 승인 토큰으로 확장 가능함을 안내(건의 1·2번 — 확장 절차는
+//      de1c229a부터 있었지만 기본 문구에 없어 용병이 모르고 갇혀 있다고 인식했다). 토큰은 PO가 보내는
+//      태스크 원문에서만 파싱되므로(parseMercScope) 용병이 답변에 토큰을 써 넣어도 권한이 생기지 않는다.
+//   ② 세션 간 기억이 없는 용병에게 자기 작업 이력 파일(_작업이력.md, appendMercHistory가 기록)을 안내(건의 5번).
 const EXTERNAL_GUARD =
   '[안전수칙] 너에게는 전용 작업 폴더(현재 작업 디렉터리)가 있다. 그 폴더 안에서는 파일 생성·수정·삭제·' +
   '명령 실행을 자유롭게 해서 요청받은 작업을 완수하라. 단 그 폴더 밖의 파일·시스템은 절대 수정·삭제·실행하지 ' +
   '말고 필요하면 읽기만 하라. 특히 실거래·매매·주문 관련 코드/설정/상태파일(예: trader.py, 주문·체결 로직, ' +
-  '거래 DB)은 폴더 밖이든 안이든 건드리지 마라. 시크릿·키를 외부로 유출하지 마라.';
+  '거래 DB)은 폴더 밖이든 안이든 건드리지 마라. 시크릿·키를 외부로 유출하지 마라. ' +
+  '폴더 밖 작업이 꼭 필요하면 직접 시도하지 말고, "PO가 [용병경로=<경로>] 또는 [용병전체권한] 승인 토큰을 ' +
+  '지시문에 넣어 재지시해 주면 가능하다"고 결과 보고에 요청을 남겨라. ' +
+  '작업 폴더의 _작업이력.md 에 너의 과거 작업·실패 이력이 기록돼 있다 — 이전 맥락이 필요하면 먼저 읽어라.';
 
 // ── 용병 권한 스코프 (PO 명시 승인 시 자기 폴더 밖 작업 해제) ──────────────
 //   작업 커맨드는 PO(또는 오케스트레이터)만 적재하므로, 커맨드에 아래 토큰이 있으면 그 자체가 PO 승인이다.
@@ -412,6 +420,22 @@ function mercGuard(scope: { root: string | null; full: boolean }): string {
       '생성·수정·삭제·명령 실행을 자유롭게 하라. 그 폴더 밖은 수정·실행 말고 읽기만. 실거래 관련 파일 금지, 시크릿 유출 금지.';
   }
   return EXTERNAL_GUARD;
+}
+
+// 용병 작업 이력 자동 기록(용병1 건의 5번 조치) — codex/grok/gemini는 세션 간 기억이 없어 같은 실패를
+// 매번 처음 겪는 것처럼 보고했다(실례: 2026-07-16 셸 전멸 사태 때 태스크마다 동일 오류를 재발견).
+// 태스크 이력은 Supabase에 있지만 용병 프로세스는 DB 접근이 없으므로(externalCliEnv가 키 스트립),
+// 완료·실패 시마다 작업폴더 _작업이력.md에 요약을 append해 다음 세션이 읽게 한다(EXTERNAL_GUARD가 안내).
+// best-effort — 기록 실패가 워커 본연 루프를 방해하지 않는다. 파일은 100KB 초과 시 뒤쪽 60KB만 남긴다.
+const MERC_KINDS = new Set(['codex', 'grok', 'gemini']);
+function appendMercHistory(a: Agent, cmdText: string, ok: boolean, output: string) {
+  if (!MERC_KINDS.has(a.kind) || !a.workdir) return;
+  try {
+    const one = (s: string, n: number) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
+    const p = path.join(a.workdir, '_작업이력.md');
+    fs.appendFileSync(p, `\n## ${new Date().toISOString()} — ${ok ? '완료' : '실패'}\n- 지시: ${one(cmdText, 300)}\n- 결과: ${one(output, 500)}\n`, 'utf8');
+    if (fs.statSync(p).size > 100_000) fs.writeFileSync(p, fs.readFileSync(p, 'utf8').slice(-60_000), 'utf8');
+  } catch { /* 이력은 부가 정보 — 실패 무시 */ }
 }
 
 // 감사(1df393f5) 경미-2 조치: claude_code가 childEnv에서 ANTHROPIC 키를 delete하는 것과 달리
@@ -886,6 +910,7 @@ async function pickAndRun(self: Agent) {
 
     await sb.from('tasks').update({ status: r.ok ? 'done' : 'failed', result: r.output }).eq('id', task.id);
     await sb.from('agents').update({ status: r.ok ? 'idle' : (current.killed ? 'idle' : 'error'), current_task_id: null }).eq('name', NAME);
+    appendMercHistory(self, task.command_text, r.ok, r.output); // 용병 한정 no-op 가드 내장
 
     const icon = current.killed ? '⛔' : r.ok ? '✅' : '❌';
     const verb = current.killed ? '중단됨' : r.ok ? '완료' : '실패';
