@@ -29,7 +29,8 @@ const HOST = os.hostname();
 //     끌어들이는 Opus 특별대우 제거 → 일반 5시간·주간 한도 하나로만 관리. Opus의 별도 주간 캡이
 //     공용계정을 반복 소진시키던 문제 근절.)
 // env CLAUDE_MODEL 로 강제 재정의 가능(특정 전략역할만 상위모델 필요 시). claude_code·claude_api 공유.
-const WORKER_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-5';
+//   ★ 한시적(PO 지시 2026-07-16): 전 워커·감사관 Fable 5 로 운용. 해제 시 이 기본값만 Sonnet 5로 되돌리면 됨.
+const WORKER_MODEL = process.env.CLAUDE_MODEL || 'claude-fable-5';
 
 // 전역 에러 핸들러 — 일시적 예외(네트워크·WebSocket 끊김 등)로 프로세스가 죽지 않게.
 // 로그만 남기고 계속 돈다(하트비트 유지). 이게 없으면 unhandled 에러에 프로세스가 abort될 수 있음.

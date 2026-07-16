@@ -42,7 +42,10 @@ foreach ($name in $names) {
   Write-Host "  -> $name"
   # 이름은 환경변수로 전달 — 공백 있는 이름이 argv에서 쪼개지는 버그 회피.
   $env:AGENT_NAME = $name
-  if ($opusWorkers -contains $name) { $env:CLAUDE_MODEL = 'claude-opus-4-8' } else { $env:CLAUDE_MODEL = $null }
+  # ★ 한시적(PO 지시 2026-07-16): 전 워커 Fable 5 통일 — opus 예외 목록을 잠시 무시한다.
+  #   해제 시 아래 한 줄을 지우고 원래 조건부(opus-workers.local.txt 기반)를 복원하면 됨.
+  #   if ($opusWorkers -contains $name) { $env:CLAUDE_MODEL = 'claude-opus-4-8' } else { $env:CLAUDE_MODEL = $null }
+  $env:CLAUDE_MODEL = $null
   Start-Process -FilePath "node" `
     -ArgumentList "--import", "tsx", "worker/agent-runner.ts" `
     -WindowStyle Hidden `
