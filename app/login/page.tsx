@@ -6,7 +6,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get('next') || '/';
+  // 사이트 내 경로만 허용(외부 URL·//호스트 차단) — next에 쿼리가 실려도(딥링크 보존) 안전하게 통과.
+  const rawNext = params.get('next') || '/';
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/';
   const [pw, setPw] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);

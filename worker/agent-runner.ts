@@ -753,14 +753,33 @@ function mdToTelegram(md: string): string {
   return s.replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// 이 워커가 속한 프로젝트 id — 콕핏 딥링크(?p=)용, PO 지시(2026-07-17 "프로젝트별로 바로 연결").
+//   config/projects.local.json(운영, gitignore) 우선 → config/projects.json(공개 예시) 폴백 — /api/projects와 동일 우선순위.
+//   worker/auditor/team 어디에 있든 매칭. 미소속·파일 없음이면 null → 버튼은 /cockpit 루트로(종전과 동일).
+let myProjectIdCache: string | null | undefined; // undefined=미조회
+function myProjectId(): string | null {
+  if (myProjectIdCache !== undefined) return myProjectIdCache;
+  myProjectIdCache = null;
+  for (const f of ['config/projects.local.json', 'config/projects.json']) {
+    try {
+      const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+      const hit = (j?.projects ?? []).find((p: { id?: string; worker?: string; auditor?: string; team?: { name?: string }[] }) =>
+        p.worker === NAME || p.auditor === NAME || (p.team ?? []).some((m) => m?.name === NAME));
+      if (hit?.id) { myProjectIdCache = String(hit.id); break; }
+    } catch { /* 없거나 파싱 실패 — 다음 후보 */ }
+  }
+  return myProjectIdCache;
+}
+
 async function telegram(chatId: number | null, text: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token || !chatId) return;
   // 콕핏 바로가기 버튼 — 텔레그램은 조회 전용이라 후속 명령은 콕핏에서 내린다(PO 요청 2026-07-17).
   //   PUBLIC_BASE_URL(.env.local) 미설정이면 버튼 없이 종전과 동일하게 전송.
   const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+  const pid = myProjectId(); // 있으면 이 워커의 프로젝트 카드로 바로 진입
   const cockpitBtn = base
-    ? { inline_keyboard: [[{ text: '🚀 콕핏 대시보드 열기', url: `${base}/cockpit` }]] }
+    ? { inline_keyboard: [[{ text: '🚀 콕핏 대시보드 열기', url: `${base}/cockpit${pid ? `?p=${encodeURIComponent(pid)}` : ''}` }]] }
     : undefined;
   // 텔레그램 단일 메시지는 최대 4096자 → 길면 여러 통으로 쪼개 전부 보낸다(무제한, 잘림 없음).
   const NL = String.fromCharCode(10);

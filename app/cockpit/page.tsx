@@ -202,7 +202,14 @@ export default function Cockpit() {
   useEffect(() => {
     fetch('/api/projects')
       .then((r) => r.json())
-      .then((j) => { if (j.ok && Array.isArray(j.projects)) setProjects(j.projects); })
+      .then((j) => {
+        if (!j.ok || !Array.isArray(j.projects)) return;
+        setProjects(j.projects);
+        // 텔레그램 회신 버튼의 프로젝트 딥링크(?p=프로젝트id) — PO 지시(2026-07-17 "프로젝트별로 바로 연결").
+        //   존재하는 id면 첫 로드에 그 프로젝트 대화를 바로 연다. 최초 1회(마운트 시)만 — 이후 탐색은 안 건드림.
+        const p = new URLSearchParams(window.location.search).get('p');
+        if (p && (j.projects as Proj[]).some((x) => x.id === p)) setSel(p);
+      })
       .catch(() => {}) // 실패해도 조용히 — 아래 목록 렌더가 빈 배열로 자연스럽게 처리
       .finally(() => setProjLoaded(true)); // 성공·실패 무관하게 로딩 종료 표시(빈 상태 vs 로딩 구분)
   }, []);

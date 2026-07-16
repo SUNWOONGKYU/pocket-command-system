@@ -31,7 +31,9 @@ export async function middleware(req: NextRequest) {
 
   const url = req.nextUrl.clone();
   url.pathname = '/login';
-  url.searchParams.set('next', pathname);
+  // 쿼리까지 보존 — 텔레그램 버튼의 프로젝트 딥링크(/cockpit?p=…)가 로그인 후에도 유지되게(PO 지시 2026-07-17).
+  url.search = '';
+  url.searchParams.set('next', pathname + req.nextUrl.search);
   return NextResponse.redirect(url);
 }
 
