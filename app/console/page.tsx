@@ -134,8 +134,9 @@ export default function Console() {
                         <span className="c-agent">{t.assigned_agent ?? '미배정'}</span>
                         <span className="c-host">#{t.id.slice(0, 6)}</span>
                       </div>
-                      <div className="c-cmd">{t.command_text}</div>
-                      {t.result && <div className="c-result">{t.result}</div>}
+                      {/* 감사관 글은 파란 바탕 — 콕핏(.recvAuditor/.sentAudit)과 동일 규칙(PO 지시 2026-07-17) */}
+                      <div className={`c-cmd ${t.command_text?.startsWith('[감사 대응]') ? 'c-cmd-audit' : ''}`}>{t.command_text}</div>
+                      {t.result && <div className={`c-result ${t.assigned_agent?.endsWith('감사관') ? 'c-result-auditor' : ''}`}>{t.result}</div>}
                       <div className="c-meta">
                         {new Date(t.updated_at).toLocaleTimeString('ko-KR', { hour12: false })}
                       </div>

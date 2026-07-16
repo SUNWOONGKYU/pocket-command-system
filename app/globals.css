@@ -333,6 +333,9 @@ body::after {
 .card2 .c-host { font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em; color: var(--text-dim); }
 .card2 .c-cmd { font-size: 12px; line-height: 1.4; color: var(--text); }
 .card2 .c-result { font-size: 11px; color: var(--text-dim); margin-top: 6px; max-height: 48px; overflow: hidden; }
+/* 감사관 글 파란 바탕 — 콕핏 감사관 파랑(#1D4ED8)과 통일(PO 지시 2026-07-17). */
+.card2 .c-result-auditor { background: #1D4ED8; color: #fff; border-radius: 6px; padding: 5px 7px; }
+.card2 .c-cmd-audit { background: #1D4ED8; color: #fff; border-radius: 6px; padding: 5px 7px; }
 .card2 .c-meta { font-family: var(--mono); font-size: 10px; color: var(--text-faint); margin-top: 8px; }
 .card2 .c-actions { display: flex; gap: 7px; margin-top: 10px; }
 .btn {
