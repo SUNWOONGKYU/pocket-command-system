@@ -7,8 +7,9 @@ function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   // 사이트 내 경로만 허용(외부 URL·//호스트 차단) — next에 쿼리가 실려도(딥링크 보존) 안전하게 통과.
+  //   백슬래시도 차단 — URL 파서가 /\evil.com 을 //evil.com(프로토콜 상대 외부 URL)으로 정규화하는 변종 봉합(감사 권고 2026-07-17).
   const rawNext = params.get('next') || '/';
-  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/';
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') && !rawNext.includes('\\') ? rawNext : '/';
   const [pw, setPw] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
