@@ -818,9 +818,12 @@ export default function Cockpit() {
                   const t = row.task;
                   const canCancel = t.status === 'queued' || t.status === 'in_progress';
                   const canRetry = t.status === 'done' || t.status === 'failed';
+                  // 감사 의견 인용 커맨드(워커에게 자동 주입되는 '[감사 대응]' 태스크) — PO 지시(2026-07-17):
+                  //   감사의견은 파란 바탕. 감사관 본인 글(.recvAuditor)과 같은 파랑으로 통일한다.
+                  const isAuditOpinion = t.command_text?.startsWith('[감사 대응]');
                   out.push(
                     <div className={`${s.msg} ${idx > 0 ? s.msgGrouped : ''}`} key={t.id}>
-                      <div className={`${s.sent} ${tailCls}`}>
+                      <div className={`${s.sent} ${isAuditOpinion ? s.sentAudit : ''} ${tailCls}`}>
                         {renderAtts(t.attachments)}
                         {t.command_text}
                         <span className={s.bubbleMeta}>
@@ -879,7 +882,7 @@ export default function Cockpit() {
                       <button className={s.taskBtn} disabled={sending} onClick={() => taskAction('retry', t)}>재시도</button>
                     )}
                   </div>
-                  <div className={s.taskCmd}>{t.command_text}</div>
+                  <div className={`${s.taskCmd} ${t.command_text?.startsWith('[감사 대응]') ? s.taskCmdAudit : ''}`}>{t.command_text}</div>
                   {t.result && <div className={`${s.taskResult} ${t.assigned_agent?.endsWith('감사관') ? s.taskResultAuditor : ''}`}>{t.result}</div>}
                 </div>
               ))}

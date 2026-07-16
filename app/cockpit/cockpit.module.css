@@ -194,6 +194,9 @@
   border-radius: 7px; padding: 6px 8px; line-height: 1.45;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .taskResultAuditor { background: #1D4ED8; color: #fff; }
+/* 감사 의견 인용 커맨드('[감사 대응]' 자동 주입) — PO 지시(2026-07-17): 감사의견은 파란 바탕.
+   감사관 본인 글(.taskResultAuditor/.recvAuditor)과 같은 파랑으로 통일. */
+.taskCmdAudit { background: #1D4ED8; color: #fff; border-radius: 7px; padding: 6px 8px; }
 
 /* 로딩 골격(skeleton) — 최초 프로젝트 로드 전, 레이아웃 점프 없이 '불러오는 중'을 표시 */
 .cardSkeleton { cursor: default; pointer-events: none; }
@@ -263,6 +266,9 @@
 /* 감사관의 글(PO 지시) — 일반 워커 응답과 구분되게 파란 배경 + 흰 글씨 */
 .recvAuditor { background: #1D4ED8; color: #fff; border-color: #1D4ED8; }
 .recvAuditor .bubbleMeta { color: rgba(255,255,255,0.75); }
+/* 감사 의견 인용 커맨드('[감사 대응]') 보낸 말풍선 — PO 지시(2026-07-17): 감사의견은 파란 바탕.
+   .sent의 브랜드색 대신 감사관 파랑(#1D4ED8)으로 — 글씨는 .sent가 이미 흰색. */
+.sentAudit { background: #1D4ED8; }
 /* 그룹핑: 마지막이 아닌 말풍선은 꼬리를 없애 둥근 모서리로(연속임을 표현) */
 .sent.noTail { border-radius: 16px; }
 .recv.noTail { border-radius: 16px; }

@@ -524,6 +524,9 @@ async function runGrok(cmdText: string, a: Agent): Promise<RunResult> {
   // 큰따옴표도 홑따옴표로 치환 — cmd.exe는 \" 이스케이프를 몰라 프롬프트 속 "에서 인용이 풀리고
   // <·>·& 같은 메타문자가 노출된다(gemini가 이 회귀로 전멸했던 것과 동일 경로, 2026-07-17 실증).
   // 따옴표가 아예 없으면 인자 전체가 cmd 단계에서도 끝까지 인용 상태로 유지돼 안전하다.
+  // ★잔여 한계(감사 c4b43722 인지 항목): cmd.exe는 따옴표 안에서도 %이름% 을 환경변수로 확장하고,
+  //   명령줄 총길이 ~8K자 초과 시 잘린다 — 지시문이 극단적으로 길면 프롬프트가 조용히 절단될 수 있다.
+  //   grok CLI가 stdin 프롬프트를 지원하게 되면 gemini처럼 stdin 전환이 근본 해법(그때 이 치환 로직 제거).
   const oneLine = (s: string) => s.replace(/\r?\n+/g, ' ').replace(/"/g, "'").trim();
   const scope = parseMercScope(cmdText);
   const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${mercGuard(scope)} ${cmdText}`);
@@ -622,10 +625,19 @@ const ADAPTERS: Record<string, (c: string, a: Agent) => Promise<RunResult>> = {
 async function heartbeat() {
   const { data } = await sb.from('agents').select('beats,status').eq('name', NAME).maybeSingle();
   if (!data) return;
+  // status는 읽은 값을 그대로 되쓰지 않고 실제 실행 상태(current.taskId)로 매번 보정한다.
+  //   종전 방식(읽은 값 되쓰기 + offline→idle만 복원)의 실증된 문제(버즈랩 개발자, 2026-07-17):
+  //   ① pickAndRun의 'working' 기록이 하트비트 read-modify-write와 경합해 stale 값으로 덮이거나
+  //   ② 일시 네트워크 스톨에 모니터가 offline으로 바꾼 걸 idle로만 복원해,
+  //   태스크가 한창 실행 중인데 콕핏 카드는 '대기'로 떠 PO가 농땡이로 오인했다.
+  //   실행 상태의 원천은 DB가 아니라 러너 자신 — 태스크 실행 중이면 working, 아니면
+  //   stale 'working'/'offline'을 idle로 복원하고 error 등 나머지는 보존한다(5초마다 자가 치유).
   await sb.from('agents').update({
     last_heartbeat_at: new Date().toISOString(),
     beats: (data.beats ?? 0) + 1,
-    status: data.status === 'offline' ? 'idle' : data.status,
+    status: current.taskId
+      ? 'working'
+      : (data.status === 'offline' || data.status === 'working' ? 'idle' : data.status),
   }).eq('name', NAME);
 }
 
@@ -744,6 +756,12 @@ function mdToTelegram(md: string): string {
 async function telegram(chatId: number | null, text: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token || !chatId) return;
+  // 콕핏 바로가기 버튼 — 텔레그램은 조회 전용이라 후속 명령은 콕핏에서 내린다(PO 요청 2026-07-17).
+  //   PUBLIC_BASE_URL(.env.local) 미설정이면 버튼 없이 종전과 동일하게 전송.
+  const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+  const cockpitBtn = base
+    ? { inline_keyboard: [[{ text: '🚀 콕핏 대시보드 열기', url: `${base}/cockpit` }]] }
+    : undefined;
   // 텔레그램 단일 메시지는 최대 4096자 → 길면 여러 통으로 쪼개 전부 보낸다(무제한, 잘림 없음).
   const NL = String.fromCharCode(10);
   const LIMIT = 3800;
@@ -761,7 +779,11 @@ async function telegram(chatId: number | null, text: string) {
     const body = chunks.length > 1 ? `${chunks[k]}${NL}<i>(${k + 1}/${chunks.length})</i>` : chunks[k];
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: body, parse_mode: 'HTML' }),
+      // 버튼은 마지막 조각에만 — 여러 통으로 쪼개져도 바로가기는 한 번만 붙인다.
+      body: JSON.stringify({
+        chat_id: chatId, text: body, parse_mode: 'HTML',
+        ...(cockpitBtn && k === chunks.length - 1 ? { reply_markup: cockpitBtn } : {}),
+      }),
     }).catch(() => {});
   }
 }
