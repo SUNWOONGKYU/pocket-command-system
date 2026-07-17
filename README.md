@@ -1,11 +1,11 @@
 # Pocket Command System
 
-*Phone-commanded AI agent fleet — drive Claude Code workers across multiple PCs from Telegram, with a real-time command-post dashboard and automatic auditor governance.*
+*Phone-commanded AI agent fleet — command Claude Code workers across multiple PCs from a mobile cockpit, with Telegram reporting and automatic auditor governance.*
 
 > **대시보드: POCKET COMMAND POST** — 주머니 속 지휘소. 폰에서 지휘하는 AI 에이전트 관제 · by Finder World
 > 명칭 구분 — **시스템 전체 = Pocket Command System** / **대시보드 = Pocket Command Post**
 
-텔레그램으로 명령을 던지면 여러 로컬 PC에 상주한 워커들이 작업(파이썬/Claude Code/스킬)을 실행하고, 그 상태를 **Supabase Realtime + Next.js** 콕핏(멀티프로젝트 관제+명령) + 칸반 콘솔에서 실시간으로 감시·제어합니다.
+폰의 콕핏(모바일웹 대시보드)에서 프로젝트·워커를 탭으로 골라 명령을 던지면 여러 로컬 PC에 상주한 워커들이 작업(파이썬/Claude Code/스킬)을 실행하고, 그 상태를 **Supabase Realtime + Next.js** 콕핏(멀티프로젝트 관제+명령) + 칸반 콘솔에서 실시간으로 감시·제어합니다. 텔레그램은 완료 보고·경고 수신과 `/status`·`/명단` 조회 전용 채널입니다(회신에는 해당 프로젝트 콕핏으로 가는 딥링크 버튼이 붙습니다).
 
 > 📖 **자세한 설명·다이어그램**: [`docs/Pocket-Command-System-설명자료.md`](docs/Pocket-Command-System-설명자료.md) — 개요·군대 편제·동작 흐름·백호 대량전개(백호+DW)·Hermes Agent 비교·SVG 관계도/흐름도
 > 📜 **License**: [Apache-2.0](LICENSE)
@@ -15,24 +15,24 @@
 ## 구조
 
 ```
-[텔레그램] ──톡──▶ /api/telegram ──▶ 오케스트레이터(오케스트레이터 LLM)
-    ▲                                      │ 담당 결정
-    │ 결과/경고                             ▼
-    │                              tasks 큐 (Supabase)
-    │                                      │ 폴링
-    │                          worker/agent-runner (에이전트별)
-    │                                      │ 하트비트 + 상태
-    │                              agents/tasks 테이블
-    │                                      │ Realtime 스트리밍
-    │                              app/cockpit/page.tsx (콕핏)
-    │                                      ▲
-    └────[/api/monitor (Cron)]──타임아웃 체크
+[폰: 콕핏(모바일웹)] ──프로젝트·워커 탭 선택──▶ /api/command
+                                              │ 담당 명시 적재
+                                              ▼
+[텔레그램] ◀─결과 보고(+콕핏 딥링크 버튼)─ tasks 큐 (Supabase)
+    │                                        │ 폴링
+    │ /status·/명단 (조회 전용)   worker/agent-runner (에이전트별)
+    ▼                                        │ 하트비트 + 상태
+ /api/telegram                       agents/tasks 테이블
+                                             │ Realtime 스트리밍
+    ┌────[/api/monitor (Cron)]──▶  app/cockpit/page.tsx (콕핏)
+    └── 타임아웃 체크 → offline 경고
 ```
+
+> ⚠️ **2026-07-13 변경**: 텔레그램 자연어 명령을 LLM으로 자동 배정하던 오케스트레이터는 배정 정확도 문제로 **폐지**했습니다. 명령은 콕핏에서 사람이 프로젝트·워커를 직접 골라 보냅니다 — 오배정이 원천적으로 없습니다.
 
 | 부품 | 파일 | 역할 |
 |---|---|---|
-| 입력/회신 | `app/api/telegram/route.ts` | 텔레그램 Webhook 수신 → 큐 적재 → 접수 회신 (`@이름` 직접 지정 · `/명단`) |
-| 오케스트레이터 | `lib/orchestrator.ts` | 명령 → 담당 에이전트 매핑 (LLM + 키워드 fallback) |
+| 조회/보고 | `app/api/telegram/route.ts` | 텔레그램 Webhook 수신 — `/status`·`/명단` 조회 전용, 나머지는 콕핏 안내 회신 |
 | 워커 | `worker/agent-runner.ts` | 작업 처리 + 하트비트 송신 (에이전트당 1프로세스) |
 | 감시 | `app/api/monitor/route.ts` | 하트비트 끊김 → offline + 텔레그램 경고 |
 | 상태 저장 | `supabase/schema.sql` | agents / tasks 테이블 + Realtime |
@@ -73,7 +73,7 @@ npm run dev    # → http://localhost:3000
 
 ### 3) 환경변수
 `.env.local.example` → `.env.local` 복사 후 값 채우기.
-`ANTHROPIC_API_KEY`는 선택 — 없으면 오케스트레이터이 키워드 규칙으로 배분.
+`ANTHROPIC_API_KEY`는 선택 — `claude_api` 어댑터(API 직호출 워커)를 쓸 때만 필요. `DASHBOARD_PASSWORD`를 설정하면 대시보드에 로그인 게이트가 걸립니다(미설정 시 공개 데모 모드).
 
 ### 4) 워커 띄우기
 ```bash
@@ -95,18 +95,19 @@ PUBLIC_BASE_URL=https://your-app.vercel.app npm run set-webhook
 
 ---
 
-## 사용 — 텔레그램 명령 체계
+## 사용 — 콕핏 명령 + 텔레그램 조회
 
-| 유형 | 예시 | 동작 |
-|---|---|---|
-| 단일 지시 | `알파, 리포트 뽑아줘` | 오케스트레이터이 담당 배정 → 실행 |
-| 동시 투입 | `전원, 일일 점검 돌려` / `@all ...` | 전 에이전트 병렬 실행 |
-| 중단 | `정지 브라보` / `브라보 그만` | 해당 에이전트 실행 중단 + 대기열 취소 |
-| 전체 중단 | `전원 정지` | 모든 에이전트 중단 |
-| 세션 초기화 | `새세션 알파` / `리셋 브라보` | Claude Code 대화 맥락 끊고 새로 시작 |
-| 현황 | `/status` | 작업/대기 인원 브리핑 |
-| 명단 | `/명단` | 등록된 에이전트 목록 조회 |
-| 직접 지정 | `@알파 ...` | 이름 접두 `@`로 담당 에이전트 명시(오케스트레이터 판단 생략, 긴 이름 우선 매칭) |
+**명령은 콕핏에서**: `/cockpit`에서 프로젝트 카드 → 워커 탭 → 하단 독에 명령 입력. 채팅 헤더의 ⚡ 액션시트로 워커 제어(급정지·재가동·종료)가 가능합니다.
+
+| 채널 | 유형 | 예시/방법 | 동작 |
+|---|---|---|---|
+| 콕핏 | 작업 지시 | 워커 탭 선택 후 입력 | 담당 명시로 큐 적재 → 실행 (오배정 없음) |
+| 콕핏 | 급정지/재가동/종료 | 채팅 헤더 ⚡ 액션시트 | `agents.control` 신호로 즉시 제어 |
+| 콘솔 | 취소/재시도 | `/console` 칸반 카드 버튼 | 대기 작업 취소, 실패 작업 재시도 |
+| 텔레그램 | 현황 | `/status` | 작업/대기 인원 브리핑 |
+| 텔레그램 | 명단 | `/명단` (`/workers`) | 등록된 에이전트 목록 조회 |
+
+텔레그램은 **조회·보고 전용**입니다 — 작업 완료 보고가 오면 해당 프로젝트 콕핏으로 바로 가는 딥링크 버튼이 함께 붙습니다.
 
 중단 동작: `agents.control='stop'` 신호 → 워커가 1.5초 내 감지 → 실행 중인 자식 프로세스를 `SIGTERM`(3초 후 `SIGKILL`)으로 종료하거나 API 호출을 abort → task를 '중단됨'으로 마감 → 상태 `idle` 복귀.
 
