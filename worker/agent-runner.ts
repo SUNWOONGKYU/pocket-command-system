@@ -1009,6 +1009,19 @@ async function pickAndRun(self: Agent) {
           await telegram(task.source_chat_id, `🔍 <b>${escHtml(NAME!)}</b> 감사 완료(대화형 세션 커밋 ${meta.commit || ''}) — 대응은 해당 세션에서 직접 확인하세요.\n${mdToTelegram(r.output)}`);
           console.log(`[${NAME}] 대화형 세션 커밋 — 워커 대응 작업 생략, 텔레그램 알림만 전송`);
         } else if (meta.worker && meta.auditDir) {
+          // 중복 대응 적재 가드(2026-07-17): 러너 재기동 등으로 같은 커밋의 감사 태스크가 재실행되면
+          // 대응 태스크도 그때마다 재적재돼 워커 세션 1회분 토큰이 낭비된다(당일 3건 실측).
+          // 대응이력.md에 이 커밋 헤더가 이미 있으면 워커가 응답을 마친 것이므로 적재를 생략한다.
+          // 파일 없음·읽기 실패는 기존 동작(적재) 유지 — 가드 오류로 정당한 대응 요청이 막히지 않게 fail-open.
+          if (meta.commit) {
+            try {
+              const resp = fs.readFileSync(`${meta.auditDir}/대응이력.md`, 'utf8');
+              if (new RegExp(`^## 커밋 ${meta.commit}`, 'm').test(resp)) {
+                console.log(`[${NAME}] 커밋 ${meta.commit} — 대응이력에 응답 존재, 대응 작업 재적재 생략`);
+                return;
+              }
+            } catch { /* 대응이력 없음/읽기 실패 — 첫 대응일 수 있으니 적재 진행 */ }
+          }
           const respPrompt =
 `[감사 대응] '${NAME}'이(가) 너의 커밋(${meta.commit || ''})을 감사했다. 아래 감사 의견을 읽고 입장을 한국어로 밝혀라(수용/부분수용/반론 + 조치계획). 그 대응을 '${meta.auditDir}/대응이력.md' 에 append 하라(헤더에 커밋 ${meta.commit || ''}·시각 포함). 코드 수정이 필요하면 정상 작업으로 진행해도 된다(새 커밋은 다시 자동 감사된다).
 
