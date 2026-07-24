@@ -328,8 +328,11 @@ on conflict (name) do nothing;
 
 -- 알파·브라보: 이 PC(claude_code)에서 워커로 동작. host/workdir 는 환경에 맞게 수정.
 -- 신규 설치에서는 이 legacy worker row에 대응하는 platoons row가 위 backfill로 생성된다.
-update agents set host='YOUR-PC-NAME', workdir='C:/Dev/pocket-command-supporting-system/_agentwork/알파'   where name='알파';
-update agents set host='YOUR-PC-NAME', workdir='C:/Dev/pocket-command-supporting-system/_agentwork/브라보' where name='브라보';
+-- ★ host is null 조건 필수 — 이 UPDATE가 무조건 실행되면 기존 운영 행의 host/workdir를 플레이스홀더로
+--   덮어써 워커가 기동 필터에서 빠져 OFFLINE이 된다(2026-07-25 운영 DB에서 실제 발생·복구한 사고).
+--   스키마 재실행은 멱등이어야 한다 — 시드는 '값이 비어 있을 때만' 채운다.
+update agents set host='YOUR-PC-NAME', workdir='C:/Dev/pocket-command-supporting-system/_agentwork/알파'   where name='알파'   and host is null;
+update agents set host='YOUR-PC-NAME', workdir='C:/Dev/pocket-command-supporting-system/_agentwork/브라보' where name='브라보' and host is null;
 
 -- ============================================================
 -- PCSS 인박스 계약 (안건2, MVP) — 신규 테이블 없음. tasks/events 기존 컬럼을 아래 convention으로 채우면
