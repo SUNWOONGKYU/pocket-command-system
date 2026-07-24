@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase';
-import { Agent, Task, Attachment, Platoon, Host, EventLog, deriveStatus, STATUS_META, USAGE_STALE_SEC, LEADER_SEEN_STALE_SEC, HEARTBEAT_TIMEOUT_SEC } from '@/lib/types';
+import { Agent, Task, Attachment, Platoon, Host, EventLog, deriveStatus, STATUS_META, USAGE_STALE_SEC, LEADER_SEEN_STALE_SEC } from '@/lib/types';
 import s from './cockpit.module.css';
 
 type TeamMember = { name: string; role: string; model?: string };
@@ -904,10 +904,13 @@ export default function Cockpit() {
               {/* PC(host)별 소대 그룹 — 접기/펼치기 가능, 그룹 헤더에 host 상태·소속 소대 수 표시 */}
               {hostGroups.map(({ key, host, projects }) => {
                 const isUnassigned = key === UNASSIGNED_HOST_KEY;
-                const hbFresh = host?.last_heartbeat_at
-                  ? (now - new Date(host.last_heartbeat_at).getTime()) / 1000 < HEARTBEAT_TIMEOUT_SEC
-                  : false;
-                const hostOnline = !isUnassigned && hbFresh && host?.status !== 'offline';
+                // host 온라인 판정은 소속 워커들의 실하트비트에서 파생한다 — hosts.last_heartbeat_at은
+                // 갱신 주체가 없어 마이그레이션 시점 값으로 고정돼 전 그룹이 OFFLINE으로 오표시되던 결함
+                // (2026-07-25 PO 보고). 소속 소대 워커 중 하나라도 살아 있으면 그 PC는 온라인이다.
+                const hostOnline = !isUnassigned && projects.some((p) => {
+                  const w = byName(p.worker);
+                  return w ? deriveStatus(w, now) !== 'offline' : false;
+                });
                 const collapsed = collapsedHosts.has(key);
                 return (
                   <details
