@@ -29,10 +29,16 @@ if (-not $has) {
 }
 
 # 3) post-commit 훅 (sh, BOM 없는 UTF-8, LF)
+#    워커 worktree 격리(PCS_WORKTREE) 대비 MAIN_ROOT를 git-common-dir 기준 절대경로로 고정하고
+#    (cwd가 워크트리든 메인이든 항상 메인 워크트리의 _audit/로 로그가 모인다),
+#    node 실행 전 mkdir -p로 _audit/를 보장한다 — 폴더가 없으면 리다이렉트(>>) 자체가 실패해
+#    node가 아예 실행되지 않고 감사 요청이 통째로 누락되는 침묵 실패를 방지(2026-07-24 e2e 실증 발견).
 $hook = Join-Path $repo '.git/hooks/post-commit'
 $hookBody = "#!/bin/sh`n" +
             "# auditor trigger - enqueue audit task after commit (auditor is auto-only)`n" +
-            "node `"$pcm/scripts/enqueue-audit.js`" $Project >> `"_audit/hook.log`" 2>&1`n" +
+            "MAIN_ROOT=`$(dirname `"`$(git rev-parse --git-common-dir)`")`n" +
+            "mkdir -p `"`$MAIN_ROOT/_audit`"`n" +
+            "node `"$pcm/scripts/enqueue-audit.js`" $Project >> `"`$MAIN_ROOT/_audit/hook.log`" 2>&1`n" +
             "exit 0`n"
 [System.IO.File]::WriteAllText($hook, $hookBody, (New-Object System.Text.UTF8Encoding($false)))
 

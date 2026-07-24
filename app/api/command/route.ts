@@ -124,7 +124,9 @@ export async function POST(req: Request) {
   };
 
   let { data, error } = await sb.from('tasks').insert(pcssPayload).select().single();
-  if (error && /assigned_platoon_id|ordered_by|task_type|column/i.test(error.message)) {
+  // 감사(436a58d5 ⓑ) 반영: 판정을 신규 컬럼명 화이트리스트로 한정 — 무관한 'column' 오류가
+  // legacy 재시도로 빠져 assigned_platoon_id를 조용히 누락시키는 것 방지.
+  if (error && /assigned_platoon_id|ordered_by|task_type/i.test(error.message)) {
     // schema migration 전 배포 호환: 신규 컬럼이 아직 없으면 legacy payload로 한 번 재시도한다.
     const retry = await sb.from('tasks').insert(legacyPayload).select().single();
     data = retry.data;

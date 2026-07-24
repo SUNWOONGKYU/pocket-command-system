@@ -43,7 +43,8 @@ export async function POST(req: Request) {
       audit_id: task.audit_id ?? null,
     };
     let { error } = await sb.from('tasks').insert(retryPayload);
-    if (error && /assigned_platoon_id|ordered_by|task_type|parent_task_id|audit_id|column/i.test(error.message)) {
+    // 감사(436a58d5 ⓑ) 반영: 신규 컬럼명 화이트리스트로만 판정 — 무관 'column' 오류 오폴백 방지.
+    if (error && /assigned_platoon_id|ordered_by|task_type|parent_task_id|audit_id/i.test(error.message)) {
       const retry = await sb.from('tasks').insert(legacyRetryPayload);
       error = retry.error;
     }

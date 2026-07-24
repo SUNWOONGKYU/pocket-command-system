@@ -124,19 +124,23 @@ ${cfg.criteria}
 [[AUDITMETA project=${projectKey}|worker=${cfg.worker}|auditDir=${auditDir}|commit=${short}|host=${os.hostname()}|actor=${actor}]]`;
 
   try {
-    const r = await fetch(url + '/rest/v1/tasks', {
+    const legacyBody = { command_text: prompt, assigned_agent: cfg.auditor, status: 'queued', source_chat_id: chatId };
+    let r = await fetch(url + '/rest/v1/tasks', {
       method: 'POST',
       headers: H,
-      body: JSON.stringify({
-        command_text: prompt,
-        assigned_agent: cfg.auditor,
-        status: 'queued',
-        source_chat_id: chatId,
-        ordered_by: 'audit_hook',
-        task_type: 'audit_request',
-      }),
+      body: JSON.stringify({ ...legacyBody, ordered_by: 'audit_hook', task_type: 'audit_request' }),
     });
+    // 감사(6f8e3051 ⓐ) 반영: 신규 provenance 컬럼 미적용 DB(마이그레이션 전 창)에서 400이 나면
+    // legacy 필드만으로 1회 재시도 — 커밋이 무감사로 새는 거버넌스 사각 차단(command/route.ts와 동일 폴백).
+    if (!r.ok) {
+      const errText = await r.text();
+      if (r.status === 400 && /ordered_by|task_type/i.test(errText)) {
+        r = await fetch(url + '/rest/v1/tasks', { method: 'POST', headers: H, body: JSON.stringify(legacyBody) });
+        if (!r.ok) console.error('[audit] legacy 폴백도 실패', r.status, await r.text());
+      } else {
+        console.error('[audit] 적재 실패', r.status, errText);
+      }
+    }
     if (r.ok) console.log('[audit] 적재:', projectKey, short, '→', cfg.auditor, '| chat:', chatId ?? '-');
-    else console.error('[audit] 적재 실패', r.status, await r.text());
   } catch (e) { console.error('[audit] 네트워크 오류', String(e)); }
 })();

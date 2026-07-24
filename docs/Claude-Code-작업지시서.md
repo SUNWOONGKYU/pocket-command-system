@@ -1,6 +1,6 @@
 # LEGACY 구현 지시서 보존본
 
-> 이 문서는 초기 Pocket Command System 구현 지시서 보존본입니다. PCSS v3.1의 정본 설계와 충돌하는 오케스트레이터/자동 자연어 배정 지시는 적용하지 않습니다. 최신 기준은 codex-artifacts/Pocket_Command_Supporting_System_개선_구현_설계서.md입니다.
+> 이 문서는 초기 Pocket Command System 구현 지시서 보존본입니다. PCSS v3.1의 정본 설계와 충돌하는 오케스트레이터/자동 자연어 배정 지시는 적용하지 않습니다. 최신 기준은 로컬 codex-artifacts/Pocket_Command_Supporting_System_개선_구현_설계서.md(gitignore된 내부 산출물 — 공개 repo에는 미포함)입니다.
 
 # LEGACY POCKET COMMANDER — Claude Code 작업 지시서
 

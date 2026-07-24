@@ -304,7 +304,9 @@ async function runClaudeCode(cmdText: string, a: Agent): Promise<RunResult> {
       // PC별로 매번 바뀌는 부분(cwd·git상태 등)을 시스템 프롬프트에서 첫 유저 메시지로 옮겨
       // 프롬프트 캐시 재사용률을 높인다. 부작용 없음(구독 인증·스킬·MCP 전부 그대로).
       '--exclude-dynamic-system-prompt-sections',
-      '--append-system-prompt', `너는 '${a.name}'. 역할: ${a.role}. ${guard}`,
+      // [실행모드=데몬] — 이 claude가 자동 백그라운드 워커(agent-runner 데몬)로 실행됐음을 in-context로 알린다.
+      //   인터랙티브 Claude Code 세션엔 이 마커가 없다 → 감사 대응 시 대응 주체(데몬/소대장)를 실행자가 스스로 판정.
+      '--append-system-prompt', `너는 '${a.name}'. 역할: ${a.role}. [실행모드=데몬] ${guard}`,
     ];
     if (useSid) args.push('--resume', useSid);
     return args;
@@ -1046,20 +1048,19 @@ async function pickAndRun(self: Agent) {
             } catch { /* 대응이력 없음/읽기 실패 — 첫 대응일 수 있으니 적재 진행 */ }
           }
           const respPrompt =
-`[감사 대응] '${NAME}'이(가) 너의 커밋(${meta.commit || ''})을 감사했다. 아래 감사 의견을 읽고 입장을 한국어로 밝혀라(수용/부분수용/반론 + 조치계획). 그 대응을 '${meta.auditDir}/대응이력.md' 에 append 하라(헤더에 커밋 ${meta.commit || ''}·시각 포함). 코드 수정이 필요하면 정상 작업으로 진행해도 된다(새 커밋은 다시 자동 감사된다).
+`[감사 대응] '${NAME}'이(가) 너의 커밋(${meta.commit || ''})을 감사했다. 아래 감사 의견을 읽고 입장을 한국어로 밝혀라(수용/부분수용/반론 + 조치계획). 그 대응을 '${meta.auditDir}/대응이력.md' 에 append 하라. 헤더는 '## 커밋 ${meta.commit || ''} 대응 [<모드>] — <YYYY-MM-DD HH:MM> (${meta.worker})' 형식으로 쓴다. <모드>는 대응한 주체다 — 네 시스템 프롬프트에 '[실행모드=데몬]'이 있으면 '데몬'(자동 백그라운드 워커), 없으면 '소대장'(사람이 붙은 인터랙티브 세션)으로 적는다. 시각은 실제 시각으로 채운다. 코드 수정이 필요하면 정상 작업으로 진행해도 된다(새 커밋은 다시 자동 감사된다).
 
 [감사 의견]
 ${r.output}`;
           try {
-            await sb.from('tasks').insert({
-              command_text: respPrompt,
-              assigned_agent: meta.worker,
-              status: 'queued',
-              source_chat_id: task.source_chat_id,
-              ordered_by: 'audit_loop',
-              task_type: 'audit_response_requested',
-              parent_task_id: task.id,
-            });
+            const legacyResp = { command_text: respPrompt, assigned_agent: meta.worker, status: 'queued', source_chat_id: task.source_chat_id };
+            const ins = await sb.from('tasks').insert({ ...legacyResp, ordered_by: 'audit_loop', task_type: 'audit_response_requested', parent_task_id: task.id });
+            // 감사(6f8e3051 ⓐ) 반영: provenance 컬럼 미적용 DB(마이그레이션 전 창)면 legacy 필드로 1회 재시도 —
+            // 감사 대응이 워커에 안 꽂히는 거버넌스 사각 차단(command/route.ts와 동일 폴백).
+            if (ins.error && /ordered_by|task_type|parent_task_id/i.test(ins.error.message)) {
+              const retry = await sb.from('tasks').insert(legacyResp);
+              if (retry.error) throw retry.error;
+            } else if (ins.error) { throw ins.error; }
             console.log(`[${NAME}] → '${meta.worker}'에게 감사 대응 작업 자동 적재`);
           } catch (e) { console.error(`[${NAME}] 대응 작업 적재 실패`, e); }
         }
