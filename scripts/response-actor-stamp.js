@@ -66,7 +66,7 @@ try {
     process.exit(0);
   }
 
-  const actor = (process.env.PCSS_ACTOR || process.env.PCS_ACTOR || '').trim();
+  const actor = (process.env.PCSS_ACTOR || '').trim();
   const stamp = actor ? `[actor:daemon:${actor}]` : '[actor:leader]';
 
   let changed = false;

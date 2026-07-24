@@ -8,7 +8,7 @@
 //
 // 원칙:
 //   - 항상 exit 0 — 훅 실패가 세션을 막으면 안 된다. 모든 오류는 조용히 삼킨다.
-//   - 워커 데몬이 띄운 claude 하위 세션(PCSS_ACTOR/PCS_ACTOR 보유)은 소대장 세션이 아니다 — 즉시 스킵.
+//   - 워커 데몬이 띄운 claude 하위 세션(PCSS_ACTOR 보유)은 소대장 세션이 아니다 — 즉시 스킵.
 //   - 소대 작업폴더가 아닌 곳의 세션은 no-op. cwd→소대 매칭 결과를 로컬 캐시(10분)해
 //     비관련 폴더에서의 프롬프트마다 네트워크를 타지 않는다.
 //   - touch는 60초 스로틀 — 프롬프트 연타에도 PATCH 폭주 없음.
@@ -45,7 +45,7 @@ async function sbFetch(url, key, pathAndQuery, opts = {}) {
     const action = process.argv[2]; // start | touch | end
     if (!['start', 'touch', 'end'].includes(action)) return;
     // 워커 데몬의 하위 claude 세션은 소대장이 아니다(데몬 소대장 본인) — 표시 전환 금지.
-    if (process.env.PCSS_ACTOR || process.env.PCS_ACTOR) return;
+    if (process.env.PCSS_ACTOR) return;
 
     let input = {};
     // BOM strip — PowerShell 파이프 등이 U+FEFF를 붙여도 파싱되게(실훅 입력엔 없지만 방어).

@@ -21,7 +21,7 @@ export async function GET() {
     // 우선순위: ① Vercel 환경변수 PCSS_PROJECTS_JSON (호스팅 서버엔 운영 실데이터를
     //   env로 주입 — gitignored 로컬 파일은 배포에 안 올라가므로) → ② 로컬 실데이터 파일
     //   (개발자 PC의 콕핏) → ③ 공개본 예시. env는 { "projects": [...] } 또는 [...] 둘 다 허용.
-    const envRaw = process.env.PCSS_PROJECTS_JSON || process.env.PCS_PROJECTS_JSON;
+    const envRaw = process.env.PCSS_PROJECTS_JSON;
     let json: any;
     if (envRaw && envRaw.trim()) {
       json = JSON.parse(envRaw);

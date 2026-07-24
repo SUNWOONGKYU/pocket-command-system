@@ -83,13 +83,7 @@ npm run dev
 - `PCSS_WORKTREE=1`: worker git worktree 격리 opt-in.
 - `PCSS_ACTOR`: worker가 커밋 actor를 감사 hook에 전달할 때 사용.
 
-호환 legacy env:
-
-- `PCS_PROJECTS_JSON`
-- `PCS_WORKTREE`
-- `PCS_ACTOR`
-
-위 legacy env는 기존 설치 보호를 위해 당분간 fallback으로 유지됩니다.
+legacy `PCS_*` env alias는 2026-07-25 일괄 폐지되었습니다 — `PCSS_*`만 유효합니다.
 
 ### 4. 워커 실행
 
