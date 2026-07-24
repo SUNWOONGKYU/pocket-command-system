@@ -59,9 +59,19 @@ export interface Platoon {
   dirty: boolean;
   current_branch: string | null;
   current_sha: string | null;
+  // 소대장 모드 — 'interactive'는 대화형 세션이 소대장, 'daemon'은 워커 데몬이 소대장.
+  // leader_seen_at이 오래되면(세션 비정상 종료 등) UI가 daemon으로 간주한다(LEADER_SEEN_STALE_SEC).
+  leader_mode: 'daemon' | 'interactive' | string;
+  leader_seen_at: string | null;
   created_at: string;
   updated_at: string;
 }
+
+// 인터랙티브 소대장 신선도 한계 — leader_seen_at이 이보다 오래되면 세션이 죽은 것으로 보고 데몬 표시.
+// (UserPromptSubmit 훅이 프롬프트마다 touch하므로, 활동 중인 세션은 항상 신선하다.)
+// 30분인 이유: 세션을 켜두고 생각/조사하는 무프롬프트 공백이 수십 분은 정상이라 짧으면 배지가 깜빡이고,
+// SessionEnd 훅이 정상 종료를 즉시 daemon으로 되돌리므로 이 값은 '비정상 종료' 방어용 상한일 뿐이다.
+export const LEADER_SEEN_STALE_SEC = 1800;
 
 export interface PlatoonRun {
   id: string;

@@ -630,8 +630,9 @@ const ADAPTERS: Record<string, (c: string, a: Agent) => Promise<RunResult>> = {
 };
 
 // ── 하트비트 ───────────────────────────────────────────────────
+let platoonBeatCount = 0;
 async function heartbeat() {
-  const { data } = await sb.from('agents').select('beats,status').eq('name', NAME).maybeSingle();
+  const { data } = await sb.from('agents').select('id,beats,status').eq('name', NAME).maybeSingle();
   if (!data) return;
   // status는 읽은 값을 그대로 되쓰지 않고 실제 실행 상태(current.taskId)로 매번 보정한다.
   //   종전 방식(읽은 값 되쓰기 + offline→idle만 복원)의 실증된 문제(버즈랩 개발자, 2026-07-17):
@@ -647,6 +648,20 @@ async function heartbeat() {
       ? 'working'
       : (data.status === 'offline' || data.status === 'working' ? 'idle' : data.status),
   }).eq('name', NAME);
+
+  // ── 소대(platoons) 하트비트 — PCSS 세션=소대 모델의 데몬 소대장 상태 반영 ──
+  //   leader_mode는 세션 훅(scripts/platoon-session-hook.js) 소관 — 여기선 건드리지 않는다.
+  //   platoons 미적용 DB(마이그레이션 전 설치)에선 update가 에러를 반환하지만 무시 — 본류 무영향.
+  //   6회에 1번(~30초)로 스로틀 — 소대 신선도 판정엔 충분하고 DB 부하는 최소.
+  if (platoonBeatCount++ % 6 === 0) {
+    try {
+      await sb.from('platoons').update({
+        status: current.taskId ? 'running' : 'idle',
+        current_task_id: current.taskId,
+        last_heartbeat_at: new Date().toISOString(),
+      }).eq('leader_worker_id', data.id);
+    } catch { /* platoons 부재 등 — 무시 */ }
+  }
 }
 
 // ── 구독 사용량(rate limit) 조회 — claude_code 워커 전용 ─────────

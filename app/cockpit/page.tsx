@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase';
-import { Agent, Task, Attachment, deriveStatus, STATUS_META, USAGE_STALE_SEC } from '@/lib/types';
+import { Agent, Task, Attachment, Platoon, deriveStatus, STATUS_META, USAGE_STALE_SEC, LEADER_SEEN_STALE_SEC } from '@/lib/types';
 import s from './cockpit.module.css';
 
 type TeamMember = { name: string; role: string; model?: string };
@@ -146,6 +146,7 @@ export default function Cockpit() {
   const [projLoaded, setProjLoaded] = useState(false); // 최초 /api/projects 응답 도착 여부 — 로딩/빈 상태 구분용
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [platoons, setPlatoons] = useState<Platoon[]>([]); // 소대 정본 — 소대장 모드(세션/데몬) 표시용
   const [now, setNow] = useState(Date.now());
   const [sel, setSel] = useState<string | null>(null); // 선택된 프로젝트 id
   const [selAgent, setSelAgent] = useState<string | null>(null); // 프로젝트 내 명령 대상(팀원 선택 시 override, null=워커)
@@ -218,12 +219,14 @@ export default function Cockpit() {
     const sb = createBrowserClient();
     if (!sb) { setLive(false); return; } // 콕핏은 라이브 전용 (데모 시드 없음) — 미설정 시 안내 배너로 알림
     const load = async () => {
-      const [{ data: a }, { data: tk }] = await Promise.all([
+      const [{ data: a }, { data: tk }, { data: pl }] = await Promise.all([
         sb.from('agents').select('*'),
         sb.from('tasks').select('*').order('updated_at', { ascending: false }).limit(120),
+        sb.from('platoons').select('*'), // 미적용 DB(마이그레이션 전)면 data=null — 배지만 안 뜨고 나머지 무영향
       ]);
       if (a) setAgents(a as Agent[]);
       if (tk) setTasks(tk as Task[]);
+      if (pl) setPlatoons(pl as Platoon[]);
     };
     load();
     const poll = setInterval(load, 15000);
@@ -231,6 +234,7 @@ export default function Cockpit() {
       .channel('cockpit')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'platoons' }, () => load())
       .subscribe();
     return () => { clearInterval(poll); sb.removeChannel(ch); };
   }, []);
@@ -537,6 +541,11 @@ export default function Cockpit() {
         <div className={s.grid}>
           {visibleProjects.map((p) => {
             const w = byName(p.worker);
+            // 소대장 모드 — interactive는 leader_seen_at이 신선할 때만(세션 비정상 종료 방어).
+            //   훅 미설치 PC·platoons 미적용 DB면 pl이 없어 배지 자체가 안 뜬다(무영향).
+            const pl = w ? platoons.find((x) => x.leader_worker_id === w.id) : null;
+            const seenFresh = pl?.leader_seen_at ? (now - new Date(pl.leader_seen_at).getTime()) / 1000 < LEADER_SEEN_STALE_SEC : false;
+            const leaderMode = pl ? (pl.leader_mode === 'interactive' && seenFresh ? 'interactive' : 'daemon') : null;
             const aud = p.auditor ? byName(p.auditor) : null;
             const wst = w ? deriveStatus(w, now) : null;
             const wmeta = wst ? STATUS_META[wst] : null;
@@ -563,6 +572,18 @@ export default function Cockpit() {
                 </div>
                 <div className={s.worker}>
                   <span className={s.wname}>{p.worker}</span>
+                  {leaderMode && (
+                    <span
+                      title={leaderMode === 'interactive' ? '대화형 Claude Code 세션이 소대장으로 지휘 중' : '워커 데몬이 소대장'}
+                      style={{
+                        fontSize: 10, padding: '1px 6px', borderRadius: 8, marginLeft: 6, whiteSpace: 'nowrap',
+                        color: leaderMode === 'interactive' ? '#7CC7FF' : 'var(--text-faint)',
+                        border: `1px solid ${leaderMode === 'interactive' ? '#7CC7FF55' : 'var(--line)'}`,
+                      }}
+                    >
+                      {leaderMode === 'interactive' ? '🎧 세션 지휘' : '⚙ 데몬'}
+                    </span>
+                  )}
                   <span className={s.wstate} style={{ color: wmeta?.color || 'var(--text-faint)' }}>
                     {wmeta?.label || '—'}
                   </span>

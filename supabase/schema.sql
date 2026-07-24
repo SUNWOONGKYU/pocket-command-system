@@ -98,10 +98,17 @@ create table if not exists platoons (
   dirty                    boolean not null default false,
   current_branch           text,
   current_sha              text,
+  -- 소대장 모드: 'daemon'(워커 데몬이 소대장) | 'interactive'(대화형 Claude Code 세션이 소대장).
+  -- 세션 훅(scripts/platoon-session-hook.js)이 전환하고, leader_seen_at으로 신선도를 판정한다.
+  leader_mode              text not null default 'daemon',
+  leader_seen_at           timestamptz,
   created_at               timestamptz not null default now(),
   updated_at               timestamptz not null default now(),
   constraint platoons_leader_worker_unique unique (leader_worker_id)
 );
+
+alter table if exists platoons add column if not exists leader_mode text not null default 'daemon';
+alter table if exists platoons add column if not exists leader_seen_at timestamptz;
 
 do $$ begin
   alter table platoons add constraint platoons_leader_worker_unique unique (leader_worker_id);
