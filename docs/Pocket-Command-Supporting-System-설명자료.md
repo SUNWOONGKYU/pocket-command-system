@@ -101,7 +101,7 @@ PO 본인이 운영 중인 실제 구성은 위에서부터 다음 순서로 콕
 ---
 
 ### 📊 시스템 관계도
-![Pocket Command Supporting System 관계도](diagrams/PCS_관계도.svg)
+![Pocket Command Supporting System 관계도](diagrams/PCSS_관계도.svg)
 
 ## 4. 어떻게 동작하나
 
@@ -129,7 +129,7 @@ PO 본인이 운영 중인 실제 구성은 위에서부터 다음 순서로 콕
 ---
 
 ### 📊 작업 흐름도
-![Pocket Command Supporting System 흐름도](diagrams/PCS_흐름도.svg)
+![Pocket Command Supporting System 흐름도](diagrams/PCSS_흐름도.svg)
 
 ## 5. 주요 기능
 
