@@ -105,7 +105,7 @@ export default function Console() {
     <div className="console-shell">
       <header className="bar">
         <div className="wordmark">
-          PCSS <span className="accent">CONSOLE</span>
+          POCKET COMMAND <span className="accent">SUPPORTING SYSTEM</span>
           <span className="sub">콘솔 · 작업·감사 상태 지원</span>
         </div>
         <nav className="nav">

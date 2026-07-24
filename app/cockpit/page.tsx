@@ -602,7 +602,7 @@ export default function Cockpit() {
     <div className="console-shell">
       <header className="bar">
         <div className="wordmark">
-          PCSS <span className="accent">COMMAND POST</span>
+          POCKET COMMAND <span className="accent">SUPPORTING SYSTEM</span>
           <span className="sub">콕핏 · 오너 지휘 — 명령·취소·재시도 (결과 알림은 텔레그램)</span>
         </div>
         <nav className="nav">
