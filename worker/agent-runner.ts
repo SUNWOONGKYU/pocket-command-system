@@ -452,7 +452,7 @@ function mercGuard(scope: { root: string | null; full: boolean }): string {
 // 태스크 이력은 Supabase에 있지만 용병 프로세스는 DB 접근이 없으므로(externalCliEnv가 키 스트립),
 // 완료·실패 시마다 작업폴더 _작업이력.md에 요약을 append해 다음 세션이 읽게 한다(EXTERNAL_GUARD가 안내).
 // best-effort — 기록 실패가 워커 본연 루프를 방해하지 않는다. 파일은 100KB 초과 시 뒤쪽 60KB만 남긴다.
-const MERC_KINDS = new Set(['codex', 'grok', 'gemini']);
+const MERC_KINDS = new Set(['codex', 'grok', 'gemini', 'antigravity']);
 function appendMercHistory(a: Agent, cmdText: string, ok: boolean, output: string) {
   if (!MERC_KINDS.has(a.kind) || !a.workdir) return;
   try {
@@ -625,9 +625,24 @@ async function runGemini(cmdText: string, a: Agent): Promise<RunResult> {
   return r;
 }
 
+async function runAntigravity(cmdText: string, a: Agent): Promise<RunResult> {
+  // Antigravity CLI(agy·Google) — `agy -p`로 단발 헤드리스 실행(실측 확인 2026-07-25, v1.1.5).
+  // 프롬프트는 grok처럼 argv 단일 인자로만 전달되므로 cmd.exe 경유 시 개행·큰따옴표 문제를
+  // 동일하게 회피한다(개행→공백, "→' 치환 — runGrok 주석의 실증 사례 참고). 서식 손실은 감수.
+  // 인증: PO의 Antigravity 로그인 공유(별도 격리 HOME 없음 — gemini와 달리 이 CLI 자체가 그 로그인의 주인).
+  // --dangerously-skip-permissions: 헤드리스 자동 승인. 하드 샌드박스는 미확인이라 workdir를
+  // 레포 밖(_mercenary_sandbox/)에 두는 grok 방식의 폴더 격리를 따른다(agents.workdir 참고).
+  const oneLine = (s: string) => s.replace(/\r?\n+/g, ' ').replace(/"/g, "'").trim();
+  const scope = parseMercScope(cmdText);
+  const prompt = oneLine(`너는 '${a.name}'. 역할: ${a.role}. ${mercGuard(scope)} ${cmdText}`);
+  const cwd = scope.root || a.workdir || undefined;
+  if (cwd) { try { fs.mkdirSync(cwd, { recursive: true }); } catch { /* 이미 있거나 권한문제 — exec에서 드러남 */ } }
+  return exec('agy', ['-p', prompt, '--dangerously-skip-permissions', '--print-timeout', '30m'], cwd, externalCliEnv());
+}
+
 const ADAPTERS: Record<string, (c: string, a: Agent) => Promise<RunResult>> = {
   python: runPython, claude_code: runClaudeCode, claude_api: runClaudeApi,
-  codex: runCodex, grok: runGrok, gemini: runGemini,
+  codex: runCodex, grok: runGrok, gemini: runGemini, antigravity: runAntigravity,
 };
 
 // ── 하트비트 ───────────────────────────────────────────────────
