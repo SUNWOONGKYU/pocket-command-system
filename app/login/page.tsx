@@ -36,7 +36,7 @@ function LoginForm() {
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
         <div className="wordmark" style={{ marginBottom: 18 }}>
-          POCKET <span className="accent">COMMANDER</span>
+          PCSS <span className="accent">LOGIN</span>
           <span className="sub">AUTHORIZED ACCESS ONLY</span>
         </div>
         <input

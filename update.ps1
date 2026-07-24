@@ -1,11 +1,11 @@
-# Pocket Commander — 워커 원클릭 업데이트 (이 PC에서 실행)
+# PCSS — 워커 원클릭 업데이트 (이 PC에서 실행)
 # git pull → 의존성 → 이 PC 담당 워커 자동 감지 → 재기동.
 $ErrorActionPreference = 'Continue'
 Set-Location -Path $PSScriptRoot
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $me = [System.Net.Dns]::GetHostName()
-Write-Host "=== Pocket Commander 워커 업데이트 ($me) ==="
+Write-Host "=== PCSS 워커 업데이트 ($me) ==="
 
 Write-Host "[1/4] git pull..."
 git pull
@@ -52,5 +52,5 @@ if (-not (Test-Path $listFile)) {
 
 Start-Sleep -Seconds 3
 Write-Host ""
-Write-Host "완료. 대시보드: <배포한 대시보드 URL>"
-Write-Host "워커가 모두 가동됩니다(창 닫아도 백그라운드 유지). 대시보드에서 초록불 확인하세요."
+Write-Host "완료. PCSS 콕핏: <배포한 PCSS 콕핏 URL>"
+Write-Host "워커가 모두 가동됩니다(창 닫아도 백그라운드 유지). PCSS 콕핏에서 초록불 확인하세요."

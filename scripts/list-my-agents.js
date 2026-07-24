@@ -1,6 +1,6 @@
-// 이 PC(hostname)에 등록된 워커 에이전트 이름을 scripts/.my-agents.txt (UTF-8)로 기록.
+// 이 PC(hostname)에 등록된 소대장/legacy worker 이름을 scripts/.my-agents.txt (UTF-8)로 기록.
 // update.ps1 이 이 파일을 UTF-8로 읽어 워커를 재기동한다. (한글 이름 인코딩 안전 — 파일 경유)
-// 오케스트레이터는 워커가 아니므로 제외.
+// legacy orchestrator row는 PCSS 직접 지휘 대상이 아니므로 제외.
 process.loadEnvFile('.env.local');
 globalThis.WebSocket = require('ws');
 const os = require('os');

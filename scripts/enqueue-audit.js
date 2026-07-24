@@ -93,11 +93,11 @@ function git(a) { try { return execSync('git ' + a, { encoding: 'utf8', maxBuffe
   try { const r = await fetch(url + '/rest/v1/tasks?source_chat_id=not.is.null&select=source_chat_id&order=created_at.desc&limit=1', { headers: H }); const j = await r.json(); chatId = (j && j[0]) ? j[0].source_chat_id : null; } catch { }
 
   // 이 커밋이 실제로 워커 데몬(agent-runner) 자신의 작업 실행 중에 만들어졌는지 판별.
-  //   워커 데몬은 claude 하위 프로세스에 PCS_ACTOR=<워커명>을 심어 실행한다(agent-runner.ts).
+  //   워커 데몬은 claude 하위 프로세스에 PCSS_ACTOR=<워커명>(legacy PCS_ACTOR도 임시 병행)을 심어 실행한다(agent-runner.ts).
   //   대화형 Claude Code 세션(사람이 직접 붙어 작업)은 이 환경변수가 없으므로 actor가 다르게 찍힌다.
   //   → 감사 자체는 항상 하되(누가 커밋했든 품질 게이트는 필요), '감사 대응'을 엉뚱한 유휴 워커에게
   //     떠넘기지 않기 위해 이 표식을 감사 완료 후 대응 라우팅 판단에 쓴다(agent-runner.ts 참고).
-  const actor = process.env.PCS_ACTOR === cfg.worker ? 'daemon' : 'interactive';
+  const actor = (process.env.PCSS_ACTOR || process.env.PCS_ACTOR) === cfg.worker ? 'daemon' : 'interactive';
 
   const prompt =
 `[커밋 감사 — 소스 읽기전용] ${projectKey} 저장소에 새 커밋이 생겼다(${actor === 'daemon' ? `워커 '${cfg.worker}'가 자기 작업 중 생성` : '대화형 Claude Code 세션에서 생성 — 워커 자동 작업 아님'}).

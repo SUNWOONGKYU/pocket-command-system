@@ -1,7 +1,7 @@
 'use client';
 
-// 포트폴리오 지휘 콕핏 — PCS의 오너 뷰. 18에이전트를 9프로젝트 카드로 묶어 한 화면에 보고,
-// 카드를 탭해 대상을 고른 뒤 하단 독에서 바로 명령한다(텔레그램 없이). PCS를 완성하는 조각.
+// PCSS 콕핏 — PO가 소대 세션을 직접 선택해 지휘하는 지원 화면. legacy worker 매핑을 호환 표시하고,
+// 카드를 탭해 소대장/legacy worker를 고른 뒤 하단 독에서 직접 대화한다(텔레그램 없이).
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import Link from 'next/link';
@@ -10,7 +10,7 @@ import { Agent, Task, Attachment, deriveStatus, STATUS_META, USAGE_STALE_SEC } f
 import s from './cockpit.module.css';
 
 type TeamMember = { name: string; role: string; model?: string };
-// meta: true — 지휘소(PCS 본체)·비서관·오케스트레이터처럼 실제 "프로젝트"가 아니라
+// meta: true — PCSS 본체·비서관 같은 실제 "프로젝트"가 아니라
 //   체계 조직 항목인 카드. 카드로는 계속 보이되 "내 프로젝트 N개" 집계에선 제외한다.
 type Proj = { id: string; label: string; worker: string; auditor: string; git: string; team?: TeamMember[]; meta?: boolean };
 // ★ 운영 실데이터(프로젝트 실명·워커 편제)를 클라이언트 번들에 안 박기 위해 정적 import 대신
@@ -96,7 +96,7 @@ const EKG_TRACE = 'M0 13 L34 13 L40 13 L44 4 L49 22 L54 13 L72 13 L78 13 L82 9 L
 const EKG_FLAT = 'M0 13 L240 13';
 
 // 감사관이 자동으로 낸 최근 판정을 텍스트에서 추출 (감사관 태스크의 결과/명령문 기준)
-// ★ PCS 감사관의 top-line verdict는 '[정상]' 마커 — 이게 있으면 본문에 '권고/지적' 언급이 있어도 정상.
+// ★ PCSS 감사관의 top-line verdict는 '[정상]' 마커 — 이게 있으면 본문에 '권고/지적' 언급이 있어도 정상.
 //   그래서 [정상]을 먼저 판정하고, 없을 때만 문제 마커([필수]/[중대]/결함 등)로 지적 여부를 본다.
 function classifyAudit(text?: string | null): { label: string; warn: boolean } | null {
   if (!text) return null;
@@ -420,9 +420,9 @@ export default function Cockpit() {
   // 감사 지적 프로젝트 라벨 집합 (정렬·필터에서 재사용)
   const flaggedLabels = new Set(auditAlerts.map((a) => a.label));
 
-  // 프로젝트 정렬 우선순위: 체계조직(meta — 지휘소·비서관·오케스트레이터)은 항상 맨 위 고정(원본 순서 유지) →
+  // 프로젝트 정렬 우선순위: 체계조직(meta — PCSS 본체·비서관)은 항상 맨 위 고정(원본 순서 유지) →
   //   그 아래 실제 프로젝트만 문제(오프라인/정체) → 감사지적 → 작업중 → 대기 → 워커없음 순.
-  //   (PO 지시: PCS/비서관/오케스트레이터는 상태와 무관하게 최상단에 고정돼야 함 — 과거 90으로 밀어 최하단에
+  //   (PO 지시: PCSS/비서관는 상태와 무관하게 최상단에 고정돼야 함 — 과거 90으로 밀어 최하단에
   //   가던 버그를 -1로 정정)
   const projRank = (p: Proj): number => {
     if (p.meta) return -1;
@@ -456,7 +456,7 @@ export default function Cockpit() {
     <div className="console-shell">
       <header className="bar">
         <div className="wordmark">
-          POCKET COMMAND <span className="accent">SYSTEM</span>
+          PCSS <span className="accent">COMMAND POST</span>
           <span className="sub">콕핏 · 오너 지휘 — 명령·취소·재시도 (결과 알림은 텔레그램)</span>
         </div>
         <nav className="nav">
@@ -673,7 +673,7 @@ export default function Cockpit() {
 
         {unmapped.length > 0 && (
           <div className={s.section}>
-            <div className={s.sectionTitle}>미분류 에이전트 · {unmapped.length} <span className={s.sectionHint}>(projects.json 미등록 — 숨지 않음)</span></div>
+            <div className={s.sectionTitle}>미분류 legacy 워커 · {unmapped.length} <span className={s.sectionHint}>(projects.json 미등록 — 숨지 않음)</span></div>
             <div className={s.chips}>
               {unmapped.map((a) => {
                 const st = deriveStatus(a, now);
@@ -871,7 +871,7 @@ export default function Cockpit() {
         ) : (
           <details className={s.section} open>
             <summary className={s.taskSummary}>
-              <span>전체 태스크 <b>{shownTasks.length}</b> <span className={s.sectionHint}>(프로젝트 탭하면 대화 모드)</span></span>
+              <span>전체 태스크 <b>{shownTasks.length}</b> <span className={s.sectionHint}>(소대 탭하면 대화 모드)</span></span>
             </summary>
             <div className={s.taskList}>
               {shownTasks.length === 0 && <div className={s.taskEmpty}>— 태스크 없음 —</div>}
@@ -940,7 +940,7 @@ export default function Cockpit() {
                     value={text}
                     rows={1}
                     enterKeyHint="send"
-                    placeholder={`${activeAgent}에게 메시지`}
+                    placeholder={`${activeAgent} 소대장에게 메시지`}
                     onChange={(e) => {
                       setText(e.target.value);
                       e.target.style.height = 'auto';
@@ -979,7 +979,7 @@ export default function Cockpit() {
               </div>
             </>
           ) : (
-            <div className={s.hint}>위에서 프로젝트를 탭하면 여기서 대화하듯 명령할 수 있어요</div>
+            <div className={s.hint}>위에서 소대를 탭하면 여기서 소대장에게 직접 명령할 수 있어요</div>
           )}
         </div>
       </div>

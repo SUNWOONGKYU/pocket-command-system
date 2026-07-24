@@ -11,7 +11,7 @@ export interface Agent {
   name: string;
   role: string;
   squad: string;
-  kind: string; // python | claude_code | claude_api | orchestrator
+  kind: string; // legacy: python | claude_code | claude_api | orchestrator. 신규 직접 지휘 대상은 platoon.
   host: string | null;
   workdir: string | null;
   entry: string | null;
@@ -26,6 +26,90 @@ export interface Agent {
   updated_at: string;
 }
 
+// PC/중대 단위의 물리 host. 지휘관이 아니라 소대들을 묶어 보여주는 그룹이다.
+export interface Host {
+  id: string;
+  label: string;
+  machine_name: string;
+  os: string | null;
+  capacity: Record<string, unknown> | null;
+  status: 'online' | 'degraded' | 'offline' | string;
+  last_heartbeat_at: string | null;
+  active_platoons: number;
+  cpu_load: number | null;
+  memory_load: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Claude Code 세션 하나 = 소대 하나. legacy agents row는 leader_worker_id로 연결한다.
+export interface Platoon {
+  id: string;
+  host_id: string | null;
+  project_id: string | null;
+  leader_worker_id: string | null;
+  claude_session_id: string | null;
+  workdir: string | null;
+  status: 'idle' | 'running' | 'blocked' | 'offline' | 'error' | string;
+  current_task_id: string | null;
+  formation_status: 'none' | 'active' | 'integrating' | 'completed' | string | null;
+  active_internal_agents: number;
+  cumulative_agent_runs: number;
+  last_heartbeat_at: string | null;
+  dirty: boolean;
+  current_branch: string | null;
+  current_sha: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlatoonRun {
+  id: string;
+  platoon_id: string;
+  task_id: string | null;
+  formation_type: 'claude_agent_teams' | 'codex' | 'antigravity' | 'dynamic_workflows' | string;
+  started_at: string;
+  completed_at: string | null;
+  peak_parallelism: number;
+  cumulative_runs: number;
+  claude_teammates: number;
+  codex_calls: number;
+  antigravity_calls: number;
+  dynamic_workflow_runs: number;
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | string;
+}
+
+export interface Audit {
+  id: string;
+  project_id: string | null;
+  platoon_id: string | null;
+  task_id: string | null;
+  audited_sha: string;
+  auditor_id: string | null;
+  status: 'queued' | 'auditing' | 'passed' | 'changes_requested' | 'blocked' | string;
+  verdict: 'pass' | 'pass_with_notes' | 'changes_requested' | 'blocked' | string | null;
+  severity_max: 'info' | 'low' | 'medium' | 'high' | 'critical' | string | null;
+  opinion_path: string | null;
+  findings_path: string | null;
+  fix_sha: string | null;
+  attempt: number;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface EventLog {
+  id: string;
+  event_type: string;
+  actor: string | null;
+  host_id: string | null;
+  platoon_id: string | null;
+  task_id: string | null;
+  audit_id: string | null;
+  idempotency_key: string | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+}
+
 // claude_code 워커의 구독 사용량(rate limit) 스냅샷 — 워커가 60초 주기로 Anthropic OAuth usage 엔드포인트를 조회해 채운다.
 export interface UsageState {
   five_hour: { pct: number; resets_at: string | null };
@@ -33,6 +117,8 @@ export interface UsageState {
   severity: 'normal' | 'warning' | 'critical' | string;
   fetched_at: string;
   alerted_for_reset?: string; // 텔레그램 중복경고 방지 — 이 resets_at에 대해 이미 알렸으면 재알림 안 함
+  limit_hold_until?: string;
+  limit_hold_msg?: string;
 }
 
 export const USAGE_STALE_SEC = 600; // 이보다 오래된 fetched_at은 표시 생략(stale 오판 방지)
@@ -50,8 +136,21 @@ export interface Attachment {
 export interface Task {
   id: string;
   command_text: string;
-  assigned_agent: string | null;
+  assigned_agent: string | null; // legacy 호환: 실제 큐 소비 worker name
+  assigned_platoon_id?: string | null;
+  ordered_by?: 'PO' | string | null;
+  task_type?: 'po_direct_command' | 'audit_remediation' | string | null;
+  parent_task_id?: string | null;
+  audit_id?: string | null;
   status: TaskStatus;
+  priority?: number | null;
+  base_sha?: string | null;
+  result_sha?: string | null;
+  branch?: string | null;
+  attempt?: number | null;
+  max_attempts?: number | null;
+  lease_expires_at?: string | null;
+  idempotency_key?: string | null;
   source_chat_id: number | null;
   result: string | null;
   progress: string | null; // 실행 중 진행 로그 꼬리(claude_code stream-json 파싱, 5초 스로틀) — 종료 후에도 사후 확인용으로 보존
@@ -66,8 +165,7 @@ export const STUCK_TIMEOUT_SEC = 180; // working 인데 이 시간 넘게 진행
 
 // 농땡이 감시의 핵심: 세 가지를 구분해서 파생 상태를 계산한다.
 export function deriveStatus(agent: Agent, now = Date.now()): DerivedStatus {
-  // 오케스트레이터는 워커가 아니라 클라우드 상주 함수 — 하트비트가 없어도 '상시 가동'
-  if (agent.kind === 'orchestrator') return 'command';
+  // legacy orchestrator row가 남아 있어도 PCSS의 지휘자/자동 배정자로 표시하지 않는다.
   if (agent.status === 'error') return 'error';
 
   const lastBeat = agent.last_heartbeat_at
@@ -97,6 +195,5 @@ export const STATUS_META: Record<
   stuck: { label: 'STUCK', color: '#E0A93B', glow: 'rgba(224,169,59,.35)' },
   offline: { label: 'OFFLINE', color: '#E5556F', glow: 'rgba(229,85,111,.4)' },
   error: { label: 'ERROR', color: '#E5556F', glow: 'rgba(229,85,111,.4)' },
-  // 오케스트레이터는 명령을 내리는(command) 지휘가 아니라 워커에게 작업을 배정·중개(orchestrate)할 뿐 — 라벨이 이를 반영.
-  command: { label: 'ORCHESTRATING', color: '#22C55E', glow: 'rgba(34,197,94,.4)' },
+  command: { label: 'LEGACY', color: '#22C55E', glow: 'rgba(34,197,94,.25)' },
 };
