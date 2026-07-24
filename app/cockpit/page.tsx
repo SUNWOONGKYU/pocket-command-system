@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase';
-import { Agent, Task, Attachment, Platoon, deriveStatus, STATUS_META, USAGE_STALE_SEC, LEADER_SEEN_STALE_SEC } from '@/lib/types';
+import { Agent, Task, Attachment, Platoon, Host, EventLog, deriveStatus, STATUS_META, USAGE_STALE_SEC, LEADER_SEEN_STALE_SEC, HEARTBEAT_TIMEOUT_SEC } from '@/lib/types';
 import s from './cockpit.module.css';
 
 type TeamMember = { name: string; role: string; model?: string };
@@ -147,6 +147,13 @@ export default function Cockpit() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [platoons, setPlatoons] = useState<Platoon[]>([]); // 소대 정본 — 소대장 모드(세션/데몬) 표시용
+  const [hosts, setHosts] = useState<Host[]>([]); // PC/중대 물리 그룹 — 프로젝트 카드를 PC별로 묶어 보여주는 데 사용
+  const [collapsedHosts, setCollapsedHosts] = useState<Set<string>>(new Set()); // 접힌 PC 그룹(호스트 키) — 기본 펼침
+  const [events, setEvents] = useState<EventLog[]>([]); // 인박스(충돌 경고)용 — 최근 50건만(RLS 공개 조회)
+  const [inboxOpen, setInboxOpen] = useState(false); // 헤더 🔔 → 인박스 패널 펼침
+  // 예외함 'failed 24h' 전용 쿼리 결과 — 일반 tasks(limit 120, updated_at desc)에 얹으면 24h 내 갱신량이
+  //   120건을 넘을 때 오래된 failed 건이 배열 밖으로 밀려 조용히 누락된다(V① 반려 결함). 그래서 별도 쿼리로 분리.
+  const [failedTasks24h, setFailedTasks24h] = useState<Task[]>([]);
   const [now, setNow] = useState(Date.now());
   const [sel, setSel] = useState<string | null>(null); // 선택된 프로젝트 id
   const [selAgent, setSelAgent] = useState<string | null>(null); // 프로젝트 내 명령 대상(팀원 선택 시 override, null=워커)
@@ -219,14 +226,23 @@ export default function Cockpit() {
     const sb = createBrowserClient();
     if (!sb) { setLive(false); return; } // 콕핏은 라이브 전용 (데모 시드 없음) — 미설정 시 안내 배너로 알림
     const load = async () => {
-      const [{ data: a }, { data: tk }, { data: pl }] = await Promise.all([
+      const [{ data: a }, { data: tk }, { data: pl }, { data: h }, { data: ev }, { data: ft }] = await Promise.all([
         sb.from('agents').select('*'),
         sb.from('tasks').select('*').order('updated_at', { ascending: false }).limit(120),
         sb.from('platoons').select('*'), // 미적용 DB(마이그레이션 전)면 data=null — 배지만 안 뜨고 나머지 무영향
+        sb.from('hosts').select('*'), // 미적용 DB면 data=null — PC 그룹핑 없이 '미지정 PC' 단일 그룹으로 폴백
+        sb.from('events').select('*').order('created_at', { ascending: false }).limit(50), // 인박스 충돌경고용
+        // 인박스 예외함 'failed 24h' 전용 — 위 tasks(limit 120)와 별개로 직접 필터링해 누락 방지(V① 반려 수정).
+        sb.from('tasks').select('*').eq('status', 'failed')
+          .gte('updated_at', new Date(Date.now() - 86400000).toISOString())
+          .order('updated_at', { ascending: false }).limit(200),
       ]);
       if (a) setAgents(a as Agent[]);
       if (tk) setTasks(tk as Task[]);
       if (pl) setPlatoons(pl as Platoon[]);
+      if (h) setHosts(h as Host[]);
+      if (ev) setEvents(ev as EventLog[]);
+      if (ft) setFailedTasks24h(ft as Task[]);
     };
     load();
     const poll = setInterval(load, 15000);
@@ -235,6 +251,8 @@ export default function Cockpit() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'platoons' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hosts' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => load())
       .subscribe();
     return () => { clearInterval(poll); sb.removeChannel(ch); };
   }, []);
@@ -409,6 +427,95 @@ export default function Cockpit() {
     return v?.warn ? { label: p.label } : null;
   }).filter(Boolean) as { label: string }[];
 
+  // ── 인박스(안건2 MVP) — 신규 테이블 없이 기존 tasks/events/agents에서 파생 + 계약(convention)만 정의 ──
+  //   PCSS는 지휘관이 아니라 '모아 보여주고 PO가 처리'하는 관측 UI다.
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  // 예외함 ① 최근 24h 내 실패 태스크 — 전용 쿼리(failedTasks24h) 사용.
+  //   일반 tasks(limit 120, updated_at desc)에 의존하면 24h 내 갱신량이 120건을 넘길 때 오래된 failed 건이
+  //   배열 밖으로 밀려 조용히 누락된다(V① 반려 결함). id로 중복 제거(전용 쿼리가 정본, 못 미더우면 tasks에서 보강).
+  type InboxItem = { id: string; kind: 'failed_task' | 'stuck_agent' | 'audit_flag' | 'approval' | 'conflict'; label: string; detail: string; time: string; projectId?: string; agentName?: string };
+  const failedIds = new Set(failedTasks24h.map((t) => t.id));
+  const failedSource = [
+    ...failedTasks24h,
+    ...tasks.filter((t) => t.status === 'failed' && !failedIds.has(t.id) && now - new Date(t.updated_at).getTime() < DAY_MS),
+  ];
+  const exFailedTasks: InboxItem[] = failedSource
+    .filter((t) => now - new Date(t.updated_at).getTime() < DAY_MS)
+    .map((t) => {
+      const proj = PROJECTS.find((p) => p.worker === t.assigned_agent);
+      return {
+        id: 'ft-' + t.id, kind: 'failed_task',
+        label: proj?.label || t.assigned_agent || '미배정',
+        detail: (t.result || t.command_text || '').slice(0, 80),
+        time: t.updated_at, projectId: proj?.id, agentName: t.assigned_agent || undefined,
+      } as InboxItem;
+    });
+
+  // 예외함 ② STUCK/OFFLINE 워커(감사관 제외 — 감사관은 자동 전용이라 지휘 대상 아님)
+  const exStuckAgents: InboxItem[] = agents
+    .filter((a) => !a.name.endsWith('감사관'))
+    .map((a) => ({ a, st: deriveStatus(a, now) }))
+    .filter(({ st }) => st === 'stuck' || st === 'offline')
+    .map(({ a, st }) => {
+      const proj = PROJECTS.find((p) => p.worker === a.name);
+      return {
+        id: 'sa-' + a.id, kind: 'stuck_agent',
+        label: proj?.label || a.name,
+        detail: STATUS_META[st].label,
+        time: a.updated_at, projectId: proj?.id, agentName: a.name,
+      } as InboxItem;
+    });
+
+  // 예외함 ③ 최근 24h 내 감사 '지적' 판정
+  const exAuditFlags: InboxItem[] = PROJECTS
+    .filter((p) => p.auditor)
+    .map((p) => {
+      const at = tasks.find((t) => t.assigned_agent === p.auditor);
+      if (!at || now - new Date(at.updated_at).getTime() >= DAY_MS) return null;
+      const v = classifyAudit(at.result || at.command_text);
+      if (!v?.warn) return null;
+      return {
+        id: 'af-' + at.id, kind: 'audit_flag',
+        label: p.label, detail: (at.result || at.command_text || '').slice(0, 80),
+        time: at.updated_at, projectId: p.id, agentName: p.worker,
+      } as InboxItem;
+    })
+    .filter(Boolean) as InboxItem[];
+
+  const exceptionItems = [...exFailedTasks, ...exStuckAgents, ...exAuditFlags]
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+  // 승인함 — 계약: task_type='approval_request' AND status='queued'. 적재 주체는 향후 워커/스킬(현재는 계약 정의뿐).
+  const approvalItems: InboxItem[] = tasks
+    .filter((t) => t.task_type === 'approval_request' && t.status === 'queued')
+    .map((t) => {
+      const proj = PROJECTS.find((p) => p.worker === t.assigned_agent);
+      return {
+        id: 'ap-' + t.id, kind: 'approval',
+        label: proj?.label || t.assigned_agent || '미배정',
+        detail: (t.command_text || '').slice(0, 80),
+        time: t.created_at, projectId: proj?.id, agentName: t.assigned_agent || undefined,
+      } as InboxItem;
+    })
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+  // 충돌 경고 — 계약: event_type='merge_conflict', payload.resolved !== true. payload 형식은 schema.sql 주석 참조.
+  const conflictItems: InboxItem[] = events
+    .filter((e) => e.event_type === 'merge_conflict' && (e.payload as Record<string, unknown> | null)?.resolved !== true)
+    .map((e) => {
+      const payload = (e.payload || {}) as { repo?: string; worker?: string; branch?: string; base?: string };
+      const proj = PROJECTS.find((p) => p.worker === payload.worker);
+      return {
+        id: 'cf-' + e.id, kind: 'conflict',
+        label: proj?.label || payload.repo || '알 수 없음',
+        detail: payload.branch ? `${payload.branch} → ${payload.base || '?'}` : '충돌 정보 없음',
+        time: e.created_at, projectId: proj?.id, agentName: payload.worker,
+      } as InboxItem;
+    })
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+  const inboxCount = exceptionItems.length + approvalItems.length + conflictItems.length;
 
   // ── 함대 상태 집계 — 헤더 스트립용 (전 에이전트를 파생상태로 분류) ──
   const fleet = (() => {
@@ -456,6 +563,41 @@ export default function Cockpit() {
     .sort((a, b) => projRank(a.p) - projRank(b.p) || a.i - b.i)
     .map(({ p }) => p);
 
+  // meta 카드(PCSS 본체·비서관)는 그룹핑 밖 최상단 고정 — projRank가 이미 이들을 맨 앞에 두므로
+  //   원본 순서(visibleProjects)에서 그대로 분리하면 정렬이 보존된다.
+  const metaProjects = visibleProjects.filter((p) => p.meta);
+  const groupableProjects = visibleProjects.filter((p) => !p.meta);
+
+  // worker → agents.host(machine_name) → hosts row 로 PC 그룹을 결정한다.
+  //   host 미매칭(호스트 필드 없음/hosts에 없는 값)이면 '미지정 PC' 그룹으로 묶는다.
+  const UNASSIGNED_HOST_KEY = '__unassigned__';
+  const hostGroups = (() => {
+    const map = new Map<string, { host: Host | null; projects: Proj[] }>();
+    for (const p of groupableProjects) {
+      const w = byName(p.worker);
+      const h = w?.host ? hosts.find((x) => x.machine_name === w.host) || null : null;
+      const key = h ? h.id : UNASSIGNED_HOST_KEY;
+      if (!map.has(key)) map.set(key, { host: h, projects: [] });
+      map.get(key)!.projects.push(p);
+    }
+    // 정렬: 이름 있는 호스트 먼저(label 가나다), 미지정은 항상 마지막.
+    return Array.from(map.entries())
+      .map(([key, v]) => ({ key, ...v }))
+      .sort((a, b) => {
+        if (a.key === UNASSIGNED_HOST_KEY) return 1;
+        if (b.key === UNASSIGNED_HOST_KEY) return -1;
+        return (a.host?.label || '').localeCompare(b.host?.label || '', 'ko');
+      });
+  })();
+
+  function toggleHostGroup(key: string) {
+    setCollapsedHosts((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
   return (
     <div className="console-shell">
       <header className="bar">
@@ -464,6 +606,15 @@ export default function Cockpit() {
           <span className="sub">콕핏 · 오너 지휘 — 명령·취소·재시도 (결과 알림은 텔레그램)</span>
         </div>
         <nav className="nav">
+          <button
+            className={s.inboxBtn}
+            onClick={() => setInboxOpen((v) => !v)}
+            aria-label="인박스 (예외·승인·충돌)"
+            aria-expanded={inboxOpen}
+            title="인박스 — 예외·승인 대기·충돌 경고"
+          >
+            🔔{inboxCount > 0 && <span className={s.inboxBadge}>{inboxCount > 99 ? '99+' : inboxCount}</span>}
+          </button>
           <Link href="/cockpit" className="active">콕핏</Link>
           <Link href="/console">콘솔</Link>
         </nav>
@@ -487,6 +638,63 @@ export default function Cockpit() {
             {live ? <><span className={s.livePulse} />LIVE</> : <span style={{ color: 'var(--s-stuck)' }}>◌ 오프라인</span>}
           </div>
         </div>
+
+        {/* 인박스 패널 — 예외함/승인함/충돌 경고 3분류. 헤더 🔔로 토글, 대화 모드에선 숨김(.chatMode에서 처리). */}
+        {inboxOpen && (
+          <div className={s.inboxPanel}>
+            <details className={s.inboxSection} open>
+              <summary className={s.inboxSectionHead}>
+                ⚠ 예외함 <span className={s.inboxCount}>{exceptionItems.length}</span>
+              </summary>
+              {exceptionItems.length === 0
+                ? <div className={s.inboxEmpty}>예외 없음</div>
+                : exceptionItems.map((it) => (
+                  <button
+                    key={it.id} className={s.inboxItem}
+                    onClick={() => { if (it.projectId) { setSel(it.projectId); setSelAgent(null); } setInboxOpen(false); }}
+                  >
+                    <span className={s.inboxItemLabel}>{it.label}</span>
+                    <span className={s.inboxItemDetail}>{it.detail}</span>
+                    <span className={s.inboxItemTime}>{relTime(it.time, now)}</span>
+                  </button>
+                ))}
+            </details>
+            <details className={s.inboxSection} open>
+              <summary className={s.inboxSectionHead}>
+                ✋ 승인함 <span className={s.inboxCount}>{approvalItems.length}</span>
+              </summary>
+              {approvalItems.length === 0
+                ? <div className={s.inboxEmpty}>승인 대기 없음</div>
+                : approvalItems.map((it) => (
+                  <button
+                    key={it.id} className={s.inboxItem}
+                    onClick={() => { if (it.projectId) { setSel(it.projectId); setSelAgent(null); } setInboxOpen(false); }}
+                  >
+                    <span className={s.inboxItemLabel}>{it.label}</span>
+                    <span className={s.inboxItemDetail}>{it.detail}</span>
+                    <span className={s.inboxItemTime}>{relTime(it.time, now)}</span>
+                  </button>
+                ))}
+            </details>
+            <details className={s.inboxSection} open>
+              <summary className={s.inboxSectionHead}>
+                ⑂ 충돌 경고 <span className={s.inboxCount}>{conflictItems.length}</span>
+              </summary>
+              {conflictItems.length === 0
+                ? <div className={s.inboxEmpty}>충돌 없음</div>
+                : conflictItems.map((it) => (
+                  <button
+                    key={it.id} className={s.inboxItem}
+                    onClick={() => { if (it.projectId) { setSel(it.projectId); setSelAgent(null); } setInboxOpen(false); }}
+                  >
+                    <span className={s.inboxItemLabel}>{it.label}</span>
+                    <span className={s.inboxItemDetail}>{it.detail}</span>
+                    <span className={s.inboxItemTime}>{relTime(it.time, now)}</span>
+                  </button>
+                ))}
+            </details>
+          </div>
+        )}
 
         {!live && (
           <div className={s.banner}>
@@ -537,9 +745,9 @@ export default function Cockpit() {
           </div>
         )}
 
-        {projLoaded && (
-        <div className={s.grid}>
-          {visibleProjects.map((p) => {
+        {projLoaded && (() => {
+          // 카드 1장 렌더 — meta 고정 카드와 PC 그룹 안 카드가 동일 마크업을 공유하도록 함수로 추출.
+          const renderCard = (p: Proj) => {
             const w = byName(p.worker);
             // 소대장 모드 — interactive는 leader_seen_at이 신선할 때만(세션 비정상 종료 방어).
             //   훅 미설치 PC·platoons 미적용 DB면 pl이 없어 배지 자체가 안 뜬다(무영향).
@@ -682,9 +890,61 @@ export default function Cockpit() {
                 )}
               </div>
             );
-          })}
-        </div>
-        )}
+          };
+
+          return (
+            <>
+              {/* meta 카드(PCSS 본체·비서관)는 PC 그룹핑 밖 최상단 고정 */}
+              {metaProjects.length > 0 && (
+                <div className={s.grid} style={{ marginBottom: hostGroups.length > 0 ? 18 : 0 }}>
+                  {metaProjects.map(renderCard)}
+                </div>
+              )}
+
+              {/* PC(host)별 소대 그룹 — 접기/펼치기 가능, 그룹 헤더에 host 상태·소속 소대 수 표시 */}
+              {hostGroups.map(({ key, host, projects }) => {
+                const isUnassigned = key === UNASSIGNED_HOST_KEY;
+                const hbFresh = host?.last_heartbeat_at
+                  ? (now - new Date(host.last_heartbeat_at).getTime()) / 1000 < HEARTBEAT_TIMEOUT_SEC
+                  : false;
+                const hostOnline = !isUnassigned && hbFresh && host?.status !== 'offline';
+                const collapsed = collapsedHosts.has(key);
+                return (
+                  <details
+                    key={key}
+                    className={s.hostGroup}
+                    open={!collapsed}
+                    onToggle={(e) => {
+                      const open = (e.target as HTMLDetailsElement).open;
+                      if (open === collapsed) toggleHostGroup(key); // 실제 변화가 있을 때만 상태 갱신
+                    }}
+                  >
+                    <summary className={s.hostGroupHead}>
+                      <span className={s.hostGroupTitle}>
+                        {!isUnassigned && (
+                          <span
+                            className={s.hostDot}
+                            style={{ background: hostOnline ? 'var(--s-working)' : 'var(--s-offline)' }}
+                          />
+                        )}
+                        {isUnassigned ? '미지정 PC' : host!.label}
+                      </span>
+                      {!isUnassigned && (
+                        <span className={s.hostGroupState} style={{ color: hostOnline ? 'var(--s-working)' : 'var(--s-offline)' }}>
+                          {hostOnline ? 'ONLINE' : 'OFFLINE'}
+                        </span>
+                      )}
+                      <span className={s.hostGroupCount}>소대 {projects.length}개</span>
+                    </summary>
+                    <div className={s.grid}>
+                      {projects.map(renderCard)}
+                    </div>
+                  </details>
+                );
+              })}
+            </>
+          );
+        })()}
 
         {projLoaded && visibleProjects.length === 0 && (
           <div className={s.empty}>

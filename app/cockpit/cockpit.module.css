@@ -162,6 +162,50 @@
 .diffHunk { color: var(--s-working); opacity: 0.9; }
 .diffCtx { color: var(--text-dim); }
 
+/* ───────── PC(host)별 소대 그룹 — 접기/펼치기(details/summary), section 패턴 재사용 ───────── */
+.hostGroup { margin-top: 18px; }
+.hostGroup:first-of-type { margin-top: 0; }
+.hostGroupHead { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none;
+  padding: 10px 4px; border-bottom: 1px solid var(--line-soft); margin-bottom: 12px; user-select: none; }
+.hostGroupHead::-webkit-details-marker { display: none; }
+.hostGroupHead::before { content: '▾'; font-size: 10px; color: var(--text-faint); transition: transform .15s; flex: none; }
+.hostGroup:not([open]) .hostGroupHead::before { transform: rotate(-90deg); }
+.hostGroupTitle { display: flex; align-items: center; gap: 8px; font-family: var(--disp); font-size: 14px;
+  font-weight: 700; color: var(--text-strong); }
+.hostDot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.hostGroupState { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+  padding: 2px 8px; border-radius: 999px; background: var(--panel-3); border: 1px solid var(--line-soft); }
+.hostGroupCount { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+
+/* ───────── 인박스(안건2) — 헤더 🔔 + 예외함/승인함/충돌 경고 패널 ───────── */
+/* 🔔 트리거 — 헤더 nav 안, 다른 링크와 나란히. 배지는 우상단 오버랩. */
+.inboxBtn { position: relative; display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: none; cursor: pointer; font-size: 17px; padding: 4px 8px; margin-right: 4px;
+  color: var(--text-dim); transition: color .15s; line-height: 1; }
+.inboxBtn:hover { color: var(--text); }
+.inboxBadge { position: absolute; top: -2px; right: 0; min-width: 15px; height: 15px; padding: 0 3px;
+  border-radius: 999px; background: var(--s-offline); color: #fff; font-family: var(--mono); font-size: 9.5px;
+  font-weight: 700; display: flex; align-items: center; justify-content: center; line-height: 1; }
+
+.inboxPanel { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 14px; box-shadow: var(--elev-1); }
+.inboxSection { border-top: 1px solid var(--line-soft); padding-top: 10px; }
+.inboxSection:first-child { border-top: none; padding-top: 0; }
+.inboxSectionHead { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+  font-family: var(--disp); font-size: 13px; font-weight: 700; color: var(--text-strong); user-select: none; }
+.inboxSectionHead::-webkit-details-marker { display: none; }
+.inboxCount { font-family: var(--mono); font-size: 11px; color: var(--text-faint); font-weight: 400; }
+.inboxEmpty { color: var(--text-faint); font-size: 12px; padding: 8px 2px 2px; }
+.inboxItem { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: var(--panel-3); border: 1px solid var(--line-soft); border-radius: var(--radius-sm);
+  padding: 8px 10px; margin-top: 8px; cursor: pointer; transition: border-color .14s, background .14s; }
+.inboxItem:hover { border-color: var(--brand); background: rgba(34,197,94,.06); }
+.inboxItemLabel { font-family: var(--body); font-size: 12.5px; font-weight: 700; color: var(--text); flex: none; }
+.inboxItemDetail { font-family: var(--body); font-size: 11.5px; color: var(--text-dim); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inboxItemTime { font-family: var(--mono); font-size: 10px; color: var(--text-faint); flex: none; }
+
 /* 통합 섹션 — 미분류 에이전트 + 태스크(콘솔 흡수) */
 .pip { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
 .section { margin-top: 22px; border-top: 1px solid var(--line-soft); padding-top: 16px; }
@@ -213,7 +257,8 @@
 
 /* 대화 모드: 프로젝트 선택 시 카드·배너·헤더·목록 숨기고 그 대화만(텔레그램식 목록→채팅) */
 .chatMode .head, .chatMode .banner, .chatMode .grid, .chatMode .section,
-.chatMode .fleet, .chatMode .controls, .chatMode .empty { display: none; }
+.chatMode .fleet, .chatMode .controls, .chatMode .empty, .chatMode .hostGroup,
+.chatMode .inboxPanel { display: none; }
 
 /* 텔레그램식 대화 — 명령=보낸 말풍선, 결과=받은 말풍선 */
 .chat { margin-top: 4px; }
@@ -425,4 +470,8 @@ a.attFile:hover { background: rgba(255,255,255,0.2); }
   .searchInput:focus { width: 100%; }
   /* 독 padding·버튼 크기·gap은 이제 데스크톱 기본값과 동일(위 .dock/.composer/.actionsToggle/.composerSend
      참조) — 모바일 전용 축소가 더 이상 필요 없어 여기 있던 중복 오버라이드 제거. */
+  /* 인박스 항목 — 좁은 폭에서 라벨/상세/시각이 한 줄에 다 안 들어가므로 2줄로: 1줄=라벨+시각, 2줄=상세(전체폭). */
+  .inboxItem { flex-wrap: wrap; }
+  .inboxItemDetail { flex-basis: 100%; white-space: normal; order: 3; }
+  .inboxItemTime { margin-left: auto; }
 }

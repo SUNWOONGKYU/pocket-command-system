@@ -330,3 +330,28 @@ on conflict (name) do nothing;
 -- 신규 설치에서는 이 legacy worker row에 대응하는 platoons row가 위 backfill로 생성된다.
 update agents set host='YOUR-PC-NAME', workdir='C:/Dev/pocket-command-supporting-system/_agentwork/알파'   where name='알파';
 update agents set host='YOUR-PC-NAME', workdir='C:/Dev/pocket-command-supporting-system/_agentwork/브라보' where name='브라보';
+
+-- ============================================================
+-- PCSS 인박스 계약 (안건2, MVP) — 신규 테이블 없음. tasks/events 기존 컬럼을 아래 convention으로 채우면
+-- 콕핏(app/cockpit/page.tsx)이 자동으로 인박스에 흡수한다. PCSS는 지휘관이 아니므로 인박스는 '모아 보여주고
+-- PO가 처리'하는 관측 UI일 뿐 — 아래 계약을 채우는 주체(워커/스킬/훅)는 이 문서 밖에서 별도 구현한다.
+--
+-- 1) 예외함 — 별도 계약 불필요. 콕핏이 기존 데이터에서 직접 파생한다.
+--    - tasks.status = 'failed' (최근 24h, updated_at 기준)
+--    - agents 파생상태(deriveStatus) = 'stuck' | 'offline' (감사관 제외)
+--    - 감사관 태스크 classifyAudit() 판정 = '지적'(warn=true, 최근 24h)
+--
+-- 2) 승인함 — tasks.task_type = 'approval_request' AND tasks.status = 'queued' 인 태스크를 승인 대기로 흡수.
+--    적재 주체(워커/스킬)가 approval_request 태스크를 queued로 insert하면 그 순간부터 콕핏 인박스에 뜬다.
+--    PO가 콕핏에서 항목을 탭하면 해당 프로젝트 대화로 이동할 뿐, 승인/반려 액션 자체는 이번 MVP 범위 밖
+--    (기존 대화 입력으로 워커에게 직접 지시하는 흐름을 그대로 사용).
+--
+-- 3) 충돌 경고 — events.event_type = 'merge_conflict' 인 row를 흡수. payload(jsonb) 형식:
+--      { "repo": "<저장소 경로 또는 이름>",
+--        "worker": "<agents.name과 일치 — 프로젝트 매칭에 사용>",
+--        "branch": "<충돌난 브랜치>",
+--        "base": "<병합 대상 브랜치>",
+--        "resolved": false }
+--    resolved 필드를 true로 update하면(또는 별도 merge_conflict_resolved 이벤트를 남기면) 콕핏에서 사라진다.
+--    이 MVP는 payload.resolved !== true 인 row만 미해결로 간주해 표시한다.
+-- ============================================================
