@@ -11,11 +11,11 @@
 -- ---------- ENUM 정의 ----------
 do $$ begin
   create type agent_status as enum ('idle', 'working', 'error', 'offline');
-exception when duplicate_object then null; end $$;
+exception when duplicate_object or duplicate_table then null; end $$;
 
 do $$ begin
   create type task_status as enum ('queued', 'in_progress', 'done', 'failed');
-exception when duplicate_object then null; end $$;
+exception when duplicate_object or duplicate_table then null; end $$;
 
 -- ---------- agents : legacy 워커/소대장 실행 프로세스 현황 ----------
 -- PCSS v3.1부터 PO의 정식 직접 대상은 platoons(Claude Code 세션=소대)다.
@@ -105,7 +105,7 @@ create table if not exists platoons (
 
 do $$ begin
   alter table platoons add constraint platoons_leader_worker_unique unique (leader_worker_id);
-exception when duplicate_object then null; end $$;
+exception when duplicate_object or duplicate_table then null; end $$;
 
 create index if not exists idx_platoons_host on platoons(host_id);
 create index if not exists idx_platoons_status on platoons(status);
@@ -272,13 +272,13 @@ where t.assigned_platoon_id is null
   and t.assigned_agent = a.name;
 
 -- ---------- Realtime 발행: 대시보드가 변경을 실시간 구독 ----------
-do $$ begin alter publication supabase_realtime add table agents; exception when duplicate_object then null; end $$;
-do $$ begin alter publication supabase_realtime add table tasks; exception when duplicate_object then null; end $$;
-do $$ begin alter publication supabase_realtime add table hosts; exception when duplicate_object then null; end $$;
-do $$ begin alter publication supabase_realtime add table platoons; exception when duplicate_object then null; end $$;
-do $$ begin alter publication supabase_realtime add table platoon_runs; exception when duplicate_object then null; end $$;
-do $$ begin alter publication supabase_realtime add table audits; exception when duplicate_object then null; end $$;
-do $$ begin alter publication supabase_realtime add table events; exception when duplicate_object then null; end $$;
+do $$ begin alter publication supabase_realtime add table agents; exception when duplicate_object or duplicate_table then null; end $$;
+do $$ begin alter publication supabase_realtime add table tasks; exception when duplicate_object or duplicate_table then null; end $$;
+do $$ begin alter publication supabase_realtime add table hosts; exception when duplicate_object or duplicate_table then null; end $$;
+do $$ begin alter publication supabase_realtime add table platoons; exception when duplicate_object or duplicate_table then null; end $$;
+do $$ begin alter publication supabase_realtime add table platoon_runs; exception when duplicate_object or duplicate_table then null; end $$;
+do $$ begin alter publication supabase_realtime add table audits; exception when duplicate_object or duplicate_table then null; end $$;
+do $$ begin alter publication supabase_realtime add table events; exception when duplicate_object or duplicate_table then null; end $$;
 
 -- ---------- RLS : 데모는 읽기 공개, 쓰기는 service_role 키로만 ----------
 alter table agents enable row level security;
