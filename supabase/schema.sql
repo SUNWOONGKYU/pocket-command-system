@@ -177,8 +177,8 @@ create index if not exists idx_events_task on events(task_id);
 
 -- ---------- tasks 호환 확장 컬럼 ----------
 alter table if exists tasks add column if not exists assigned_platoon_id uuid references platoons(id) on delete set null;
-alter table if exists tasks add column if not exists ordered_by text not null default 'PO';
-alter table if exists tasks add column if not exists task_type text not null default 'po_direct_command';
+alter table if exists tasks add column if not exists ordered_by text not null default 'legacy_unspecified';
+alter table if exists tasks add column if not exists task_type text not null default 'legacy_task';
 alter table if exists tasks add column if not exists parent_task_id uuid references tasks(id) on delete set null;
 alter table if exists tasks add column if not exists audit_id uuid references audits(id) on delete set null;
 alter table if exists tasks add column if not exists priority integer not null default 0;

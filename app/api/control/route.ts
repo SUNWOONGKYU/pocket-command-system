@@ -28,12 +28,26 @@ export async function POST(req: Request) {
 
   // ── 재시도 ── 같은 명령으로 새 작업을 큐에 다시 적재 (원본은 보존)
   if (action === 'retry') {
-    await sb.from('tasks').insert({
+    const legacyRetryPayload = {
       command_text: task.command_text,
       assigned_agent: task.assigned_agent,
       status: 'queued',
       source_chat_id: task.source_chat_id,
-    });
+    };
+    const retryPayload = {
+      ...legacyRetryPayload,
+      assigned_platoon_id: task.assigned_platoon_id ?? null,
+      ordered_by: task.ordered_by ?? 'legacy_unspecified',
+      task_type: `${task.task_type ?? 'legacy_task'}_retry`.slice(0, 80),
+      parent_task_id: task.id,
+      audit_id: task.audit_id ?? null,
+    };
+    let { error } = await sb.from('tasks').insert(retryPayload);
+    if (error && /assigned_platoon_id|ordered_by|task_type|parent_task_id|audit_id|column/i.test(error.message)) {
+      const retry = await sb.from('tasks').insert(legacyRetryPayload);
+      error = retry.error;
+    }
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, note: '재시도 큐 적재' });
   }
 

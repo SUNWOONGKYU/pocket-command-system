@@ -124,7 +124,18 @@ ${cfg.criteria}
 [[AUDITMETA project=${projectKey}|worker=${cfg.worker}|auditDir=${auditDir}|commit=${short}|host=${os.hostname()}|actor=${actor}]]`;
 
   try {
-    const r = await fetch(url + '/rest/v1/tasks', { method: 'POST', headers: H, body: JSON.stringify({ command_text: prompt, assigned_agent: cfg.auditor, status: 'queued', source_chat_id: chatId }) });
+    const r = await fetch(url + '/rest/v1/tasks', {
+      method: 'POST',
+      headers: H,
+      body: JSON.stringify({
+        command_text: prompt,
+        assigned_agent: cfg.auditor,
+        status: 'queued',
+        source_chat_id: chatId,
+        ordered_by: 'audit_hook',
+        task_type: 'audit_request',
+      }),
+    });
     if (r.ok) console.log('[audit] 적재:', projectKey, short, '→', cfg.auditor, '| chat:', chatId ?? '-');
     else console.error('[audit] 적재 실패', r.status, await r.text());
   } catch (e) { console.error('[audit] 네트워크 오류', String(e)); }
