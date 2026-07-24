@@ -452,7 +452,7 @@ function mercGuard(scope: { root: string | null; full: boolean }): string {
 // 태스크 이력은 Supabase에 있지만 용병 프로세스는 DB 접근이 없으므로(externalCliEnv가 키 스트립),
 // 완료·실패 시마다 작업폴더 _작업이력.md에 요약을 append해 다음 세션이 읽게 한다(EXTERNAL_GUARD가 안내).
 // best-effort — 기록 실패가 워커 본연 루프를 방해하지 않는다. 파일은 100KB 초과 시 뒤쪽 60KB만 남긴다.
-const MERC_KINDS = new Set(['codex', 'grok', 'gemini', 'antigravity']);
+const MERC_KINDS = new Set(['codex', 'grok', 'antigravity']);
 function appendMercHistory(a: Agent, cmdText: string, ok: boolean, output: string) {
   if (!MERC_KINDS.has(a.kind) || !a.workdir) return;
   try {
@@ -495,7 +495,7 @@ function externalCliEnv(): NodeJS.ProcessEnv {
 // 인증·설정(auth.json 등)은 CODEX_HOME으로 실프로필의 ~/.codex를 그대로 쓴다(격리 HOME과 분리).
 // 부수 효과: 샌드박스 읽기 루트에서 PO 실프로필이 빠져 용병 격리가 오히려 강해진다. 단 샌드박스 안에서
 // 실프로필 하위(npm 전역 등) 읽기가 필요한 작업은 실패할 수 있음 — 필요해지면 PO 승인 후 경로 추가.
-const CODEX_ISOLATED_PROFILE = 'C:/Dev/_mercenary_sandbox/용병1-home';
+const CODEX_ISOLATED_PROFILE = 'C:/Dev/_mercenary_sandbox/codex-cli-home';
 function codexEnv(): NodeJS.ProcessEnv {
   const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
   try { fs.mkdirSync(CODEX_ISOLATED_PROFILE, { recursive: true }); } catch { /* 권한문제면 exec에서 드러남 */ }
@@ -552,78 +552,8 @@ async function runGrok(cmdText: string, a: Agent): Promise<RunResult> {
   return r;
 }
 
-// gemini CLI 전용 격리 HOME(레포 밖) — PO 개인 Antigravity/gemini 로그인(~/.gemini, oauth-personal)과
-// 절대 안 섞이게 분리. 이 HOME엔 oauth_creds.json이 없어 GEMINI_API_KEY 인증 경로로 자동 진입한다
-// (실측 확인: 같은 격리 HOME + API 키로 -p 헤드리스 정상 응답. 단 무료 티어 쿼터로 재시도 지연 있음 — 위 주석 참고).
-const GEMINI_HOME = 'C:/Dev/_mercenary_sandbox/용병2-home';
-
-// ── 무료 티어 자체 쿼터 스로틀 ────────────────────────────────
-// 실측(2026-07-13) 쿼터 = 분당 5회(generate_content_free_tier_requests). 초과 요청을 그대로
-// 쏘고 gemini CLI의 429 재시도(30~90초)에 기대는 대신, 호출 직전에 최근 60초 창 안의 호출 수를
-// 세어 5회 미만일 때만 즉시 보내고 이미 5회면 가장 오래된 호출이 60초를 넘길 때까지 대기한다.
-// 프로세스 내 인메모리 카운터라 워커 재시작 시 리셋되지만, 이 워커는 한 번에 한 태스크만 처리하므로
-// (pickAndRun의 current.taskId 가드) 충분하다.
-const GEMINI_FREE_TIER_RPM = 5;
-const GEMINI_WINDOW_MS = 60_000;
-const geminiCallLog: number[] = [];
-
-// 대기 중 stop 신호(current.killed)가 오면 최대 1초 안에 반응해 대기를 끊는다 — 이게 없으면
-// 쿼터 대기(최대 ~60초)를 다 채운 뒤에야 gemini를 1회 실행하고서야 중단 처리되던 문제(감사 d90c0fb9 지적).
-const KILL_CHECK_MS = 1000;
-
-async function waitForGeminiQuota(): Promise<void> {
-  for (;;) {
-    if (current.killed) return;
-    const now = Date.now();
-    while (geminiCallLog.length && now - geminiCallLog[0] >= GEMINI_WINDOW_MS) geminiCallLog.shift();
-    if (geminiCallLog.length < GEMINI_FREE_TIER_RPM) { geminiCallLog.push(now); return; }
-    const waitMs = GEMINI_WINDOW_MS - (now - geminiCallLog[0]) + 250; // 창 경계 오차 여유 250ms
-    console.log(`[gemini] 무료 티어 분당 ${GEMINI_FREE_TIER_RPM}회 한도 도달 — ${Math.ceil(waitMs / 1000)}초 대기 후 재시도`);
-    let remaining = waitMs;
-    while (remaining > 0 && !current.killed) {
-      const chunk = Math.min(remaining, KILL_CHECK_MS);
-      await new Promise((r) => setTimeout(r, chunk));
-      remaining -= chunk;
-    }
-    if (current.killed) return;
-  }
-}
-
-async function runGemini(cmdText: string, a: Agent): Promise<RunResult> {
-  fs.mkdirSync(GEMINI_HOME, { recursive: true });
-  await waitForGeminiQuota();
-  // 대기 중 중단됐으면 gemini를 실행하지 않고 즉시 리턴 — 최종 출력은 pickAndRun이 current.killed를
-  // 보고 어차피 '⛔ 사용자 중단'으로 덮어쓰므로 여기 output 텍스트 자체는 의미 없음(호출 생략이 핵심).
-  if (current.killed) return { ok: false, output: '⛔ 쿼터 대기 중 중단' };
-  const scope = parseMercScope(cmdText);
-  // 프롬프트는 codex처럼 stdin으로(-p 인자 없이 파이프 입력이 곧 프롬프트 — 실측 확인).
-  //   ★ -p argv 전달은 79bf28c(\" 이스케이프 전환)의 회귀로 전멸했었다(실증 2026-07-17 스모크):
-  //   cmd.exe는 \"를 몰라 가드 문구의 큰따옴표에서 인용이 풀리고, 이어지는 <경로> 꺾쇠가
-  //   입력 리다이렉션으로 해석돼 "지정된 파일을 찾을 수 없습니다"로 즉사. stdin이면 명령줄에
-  //   프롬프트가 아예 없어 인용·개행 문제 모두 원천 차단(멀티라인 서식도 보존).
-  const cwd = scope.root || a.workdir || undefined;
-  if (cwd) { try { fs.mkdirSync(cwd, { recursive: true }); } catch { /* 이미 있거나 권한문제 — exec에서 드러남 */ } }
-  const env = { ...externalCliEnv(), HOME: GEMINI_HOME, USERPROFILE: GEMINI_HOME };
-  // --approval-mode yolo: 편집·명령을 프롬프트 없이 자동 승인(헤드리스 실작업). 작업은 cwd 기준으로 이뤄지고,
-  // 범위(자기 폴더 한정 / PO 지정 경로 / 전체)는 cwd + mercGuard 문구로 지시한다.
-  // (PO 결정 2026-07-15: 용병이 자기 작업폴더 안에서 자유 작업, PO 승인 시 확장.)
-  // ★주의(감사 de1c229a 지적): gemini에는 codex의 --sandbox 같은 OS 레벨 격리가 없다 — yolo는 자동 승인일 뿐
-  //   cwd 밖 쓰기를 하드 차단하지 않으며, 경계는 전적으로 mercGuard 프롬프트 준수(소프트 가드)에 의존한다.
-  //   따라서 [용병전체권한]급 확장 승인은 하드 격리가 있는 codex 쪽 용병에게 주는 것을 권장(운용 지침).
-  const prompt = `너는 '${a.name}'. 역할: ${a.role}. ${mercGuard(scope)}\n\n${cmdText}`;
-  const r = await exec(
-    'gemini',
-    ['--skip-trust', '--approval-mode', 'yolo', '-o', 'json'],
-    cwd,
-    env,
-    prompt,
-  );
-  try {
-    const parsed = JSON.parse(r.output);
-    if (typeof parsed?.response === 'string') return { ok: r.ok, output: parsed.response };
-  } catch { /* JSON 파싱 실패(구버전·형식변경 등) — 전체 출력 그대로 폴백 */ }
-  return r;
-}
+// gemini 어댑터는 2026-07-25 PO 지시로 폐지 — 파견 2종은 Codex·Antigravity(설계서 §7.2), Google 몫은
+// Antigravity CLI가 승계(같은 벤더 중복 제거). 복원 필요 시 git 이력의 runGemini/waitForGeminiQuota 참고.
 
 async function runAntigravity(cmdText: string, a: Agent): Promise<RunResult> {
   // Antigravity CLI(agy·Google) — `agy -p`로 단발 헤드리스 실행(실측 확인 2026-07-25, v1.1.5).
@@ -642,7 +572,7 @@ async function runAntigravity(cmdText: string, a: Agent): Promise<RunResult> {
 
 const ADAPTERS: Record<string, (c: string, a: Agent) => Promise<RunResult>> = {
   python: runPython, claude_code: runClaudeCode, claude_api: runClaudeApi,
-  codex: runCodex, grok: runGrok, gemini: runGemini, antigravity: runAntigravity,
+  codex: runCodex, grok: runGrok, antigravity: runAntigravity,
 };
 
 // ── 하트비트 ───────────────────────────────────────────────────
