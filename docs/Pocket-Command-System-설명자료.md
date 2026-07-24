@@ -1,10 +1,10 @@
-# Pocket Command System — 설명 자료
+# Pocket Command Supporting System — 설명 자료
 
 > **주머니 속 지휘소.** 내 PC는 켜두되 Claude Code 창은 단 하나도 띄우지 않고
 > **headless(=invisible=백그라운드 데몬)** 모드로 다수의 Claude Code를 상시 구동해 두고,
 > 콕핏(웹 대시보드)에서 프로젝트·워커를 탭으로 골라 명령을 던지면 결과가 돌아오는 시스템.
 >
-> - **시스템 전체 이름**: Pocket Command System
+> - **시스템 전체 이름**: Pocket Command Supporting System
 > - **대시보드 이름**: Pocket Command Post (포켓 커맨드 포스트 — 관제 화면, 콕핏)
 > - 제작: Finder World
 > - **2026-07-14 현행화**: 오케스트레이터(자연어 자동배정) 폐지 → 콕핏 직접 선택 방식으로 전환. 비서관·용병대(외부 AI 3종)·지휘소 자체 워커(에코) 반영.
@@ -19,7 +19,7 @@
 4. [어떻게 동작하나 — 작업 한 건의 여정](#4-어떻게-동작하나)
 5. [주요 기능](#5-주요-기능)
 6. [★ 특별 기능 — 백호 소대 편제 (대규모 AI 동시 투입)](#6--특별-기능--백호-소대-편제-대규모-ai-동시-투입)
-7. [비교 — Hermes Agent와 Pocket Command System](#7-비교--hermes-agent와-pocket-command-system)
+7. [비교 — Hermes Agent와 Pocket Command Supporting System](#7-비교--hermes-agent와-pocket-command-system)
 8. [기술 구조](#8-기술-구조)
 9. [직접 만들기 — 재현 가이드](#9-직접-만들기--재현-가이드)
 10. [한계와 주의점](#10-한계와-주의점)
@@ -37,7 +37,7 @@ AI(클로드 등)에게 일을 시키려면 보통 **컴퓨터 앞에 앉아 화
 - 한 번에 한 가지 대화만 붙잡고 있어야 한다.
 - 컴퓨터를 여러 대 두고 동시에 굴리기 어렵다.
 
-Pocket Command System은 이 셋을 뒤집습니다.
+Pocket Command Supporting System은 이 셋을 뒤집습니다.
 - **폰만 있으면** 됩니다. 모바일웹 콕핏에서 프로젝트·워커를 탭으로 골라 명령을 보내면 끝.
 - 일은 **눈에 보이지 않는 백그라운드에서 알아서** 돌아갑니다. Claude Code 창을 하나도 띄우지 않고
   headless 데몬으로 상시 구동 — 던져놓고 다른 일 하면 됩니다.
@@ -49,7 +49,7 @@ Pocket Command System은 이 셋을 뒤집습니다.
 
 ### 지금 실제로 돌아가는 편성 (2026-07-14 기준)
 PO 본인이 운영 중인 실제 구성은 위에서부터 다음 순서로 콕핏에 카드로 뜹니다.
-1. **Pocket Command System(지휘소)** — 이 시스템 자신을 개발·관리하는 자기참조 워커(에코) + 전담 감사관
+1. **Pocket Command Supporting System(지휘소)** — 이 시스템 자신을 개발·관리하는 자기참조 워커(에코) + 전담 감사관
 2. **비서관** — 일정 관리 등 PO 개인 업무를 돕는 워커(코드 작업 아님)
 3. **용병대 3종** — Codex(용병1)·Gemini(용병2)·Grok(용병3), 외부 벤더 CLI/API를 독립 카드로 호출
 4. **프로젝트별 워커** — 현재 8개 프로젝트(BuzzLab·SAAH·WAAT·stock-prediction·주식 트레이더·DID_system·
@@ -61,7 +61,7 @@ PO 본인이 운영 중인 실제 구성은 위에서부터 다음 순서로 콕
 
 ## 2. 무엇이 다른가
 
-| 보통의 AI 사용 | Pocket Command System |
+| 보통의 AI 사용 | Pocket Command Supporting System |
 |---|---|
 | 컴퓨터 앞에 앉아야 함 | **폰(모바일웹 콕핏)에서** 지시 |
 | 한 번에 한 대화 | **여러 일꾼 동시** 가동 (headless 백그라운드) |
@@ -86,7 +86,7 @@ PO 본인이 운영 중인 실제 구성은 위에서부터 다음 순서로 콕
 | 편제 | 정체 | 설명 |
 |---|---|---|
 | **지휘관** | **사람 (PO = Product Owner, 제품 책임자)** | 최종 명령권자. 통수권자. 콕핏에서 직접 배정까지 겸함. |
-| **지휘소** | **PCS 자기 자신** (워커 "에코" + 전담 감사관) | 이 시스템 자신의 코드를 개발·관리하는 자기참조 카드. |
+| **지휘소** | **PCSS 자기 자신** (워커 "에코" + 전담 감사관) | 이 시스템 자신의 코드를 개발·관리하는 자기참조 카드. |
 | **비서관** | **개인비서 워커** | 일정 관리 등 PO 개인 업무 보조. 코드 작업 아님. |
 | **용병대** | **외부 벤더 CLI/API 3종** | Codex(용병1)·Gemini(용병2)·Grok(용병3). 비서관과 동급 독립 카드. |
 | **중대** | **PC 한 대** | 여러 소대(일꾼)를 호스팅하는 물리 컴퓨터. |
@@ -101,7 +101,7 @@ PO 본인이 운영 중인 실제 구성은 위에서부터 다음 순서로 콕
 ---
 
 ### 📊 시스템 관계도
-![Pocket Command System 관계도](diagrams/PCS_관계도.svg)
+![Pocket Command Supporting System 관계도](diagrams/PCS_관계도.svg)
 
 ## 4. 어떻게 동작하나
 
@@ -129,7 +129,7 @@ PO 본인이 운영 중인 실제 구성은 위에서부터 다음 순서로 콕
 ---
 
 ### 📊 작업 흐름도
-![Pocket Command System 흐름도](diagrams/PCS_흐름도.svg)
+![Pocket Command Supporting System 흐름도](diagrams/PCS_흐름도.svg)
 
 ## 5. 주요 기능
 
@@ -203,7 +203,7 @@ PO 본인이 운영 중인 실제 구성은 위에서부터 다음 순서로 콕
 ### 특허
 백호 소대 편제 방식은 **특허출원** 되어 있습니다 — 출원번호 **10-2026-0041235**(출원일 2026.03.07).
 
-> 요약: Pocket Command System이 "여러 워커의 수평 확장"이라면, 백호는 "워커 한 명의 수직 폭발".
+> 요약: Pocket Command Supporting System이 "여러 워커의 수평 확장"이라면, 백호는 "워커 한 명의 수직 폭발".
 > 둘을 합치면 **N대의 PC × 각 워커의 분대 폭발** = 폰 한 줄로 지휘하는 대규모 AI 군단.
 
 ### 📊 백호 편제 관계도
@@ -214,9 +214,9 @@ PO 본인이 운영 중인 실제 구성은 위에서부터 다음 순서로 콕
 
 ---
 
-## 7. 비교 — Hermes Agent와 Pocket Command System
+## 7. 비교 — Hermes Agent와 Pocket Command Supporting System
 
-Pocket Command System은 잘 알려진 에이전트 하네스 **Hermes Agent**(NousResearch)의 설계를 **출발점 삼아 만든
+Pocket Command Supporting System은 잘 알려진 에이전트 하네스 **Hermes Agent**(NousResearch)의 설계를 **출발점 삼아 만든
 Claude Code 네이티브 재구현**입니다. 아래는 성능 벤치마크가 아니라 공개 자료 기반 설계 비교입니다.
 
 > "멀티 워커·오케스트레이션·공유 작업보드·멀티호스트·텔레그램"은 **Hermes Agent에 이미 있는 공통 토대**입니다 — 우리만의 차별점이 아닙니다.
@@ -233,14 +233,14 @@ Claude Code 네이티브 재구현**입니다. 아래는 성능 벤치마크가 
 - **경량·이식성**($5 VPS(가상 사설 서버) 구동) + **보안**(self-generated skills로 공급망 공격면 차단, CVE(공개 취약점 식별번호) 0건 보고) + **오픈소스(MIT 라이선스)**.
 - 멀티호스트 백엔드 다양성(Docker·SSH·서버리스 등).
 
-### Pocket Command System의 실제 차별점
+### Pocket Command Supporting System의 실제 차별점
 1. **Claude Code 네이티브 대량 폭발** — 워커가 claude CLI(구독) 위에서 돌고, **백호(Agent Teams) 완편 44명 + DW(Dynamic Workflows) 누적 최대 1,000**으로 단일 명령을 군단급으로 전개. Hermes Agent 일반 서브에이전트와 다른 *Claude 전용* 메커니즘.
 2. **감사관 견제 거버넌스** — 자기 학습이 아니라 **독립된 감사관**이 워커 커밋을 자동 감사 → 워커가 자동 대응(감사↔대응 루프). 산출물 품질을 *별도 주체*가 견제.
 3. **군대 편제 UX(사용자 경험) + 부대 관제 대시보드** — 지휘관·지휘소·중대·소대·분대·감사관의 일관된 지휘 메타포 + 하트비트 EKG 대시보드(Pocket Command Post). (Hermes Agent Kanban이 *작업* 중심 보드라면, 이쪽은 *부대 생존·상태* 중심 관제.)
 
 ### 한 줄 정리
 > Hermes Agent는 **"스스로 자라는 범용 에이전트 런타임"**(원조·성숙·다채널·학습·이식성).
-> Pocket Command System은 그걸 벤치마킹한 **"Claude Code 네이티브 + 군대식 거버넌스"** 버전 —
+> Pocket Command Supporting System은 그걸 벤치마킹한 **"Claude Code 네이티브 + 군대식 거버넌스"** 버전 —
 > *개인이 폰으로 다수 PC의 Claude 부대를 지휘하고, 백호/DW로 폭발시키며, 감사관으로 견제*하는 데 특화했다.
 > **닮은 토대 위에, Claude 전용 대량전개·감사 거버넌스·편제 UX를 얹은 것**이 본질이다.
 
@@ -401,5 +401,5 @@ powershell ./install-auditor.ps1
 
 ---
 
-*이 문서는 Pocket Command System의 공식 설명 자료입니다. HTML·PPT·영상 버전의 원천 자료로 사용됩니다.*
+*이 문서는 Pocket Command Supporting System의 공식 설명 자료입니다. HTML·PPT·영상 버전의 원천 자료로 사용됩니다.*
 *전문 용어·약자는 본문에서 처음 나오는 자리에 괄호로 풀이를 달았습니다(별도 용어집 없음).*

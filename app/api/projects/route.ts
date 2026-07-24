@@ -1,4 +1,4 @@
-// 콕핏 프로젝트 매핑 제공 API — config/projects.local.json(운영 실데이터, gitignore)이 있으면 그걸,
+// PCSS 콕핏 프로젝트/소대 매핑 제공 API — config/projects.local.json(운영 실데이터, gitignore)이 있으면 그걸,
 // 없으면 config/projects.json(공개본에 tracked된 일반화 예시)을 읽어 반환한다.
 //   ★ 목적: 콕핏(app/cockpit/page.tsx)이 이 데이터를 정적 import 대신 이 API로 fetch해야,
 //   운영 실데이터(프로젝트 실명·워커 편제·경로)가 클라이언트 번들(공개 JS)에 안 박힌다.
@@ -18,10 +18,10 @@ export async function GET() {
   const examplePath = path.join(dir, 'projects.json');
 
   try {
-    // 우선순위: ① Vercel 환경변수 PCS_PROJECTS_JSON (호스팅 서버엔 운영 실데이터를
+    // 우선순위: ① Vercel 환경변수 PCSS_PROJECTS_JSON (호스팅 서버엔 운영 실데이터를
     //   env로 주입 — gitignored 로컬 파일은 배포에 안 올라가므로) → ② 로컬 실데이터 파일
     //   (개발자 PC의 콕핏) → ③ 공개본 예시. env는 { "projects": [...] } 또는 [...] 둘 다 허용.
-    const envRaw = process.env.PCS_PROJECTS_JSON;
+    const envRaw = process.env.PCSS_PROJECTS_JSON || process.env.PCS_PROJECTS_JSON;
     let json: any;
     if (envRaw && envRaw.trim()) {
       json = JSON.parse(envRaw);

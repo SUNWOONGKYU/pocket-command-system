@@ -1,4 +1,4 @@
-# Pocket Commander — 이 PC 담당 워커 기동 (부팅/로그온 자동 실행용)
+# PCSS — 이 PC 담당 워커 기동 (부팅/로그온 자동 실행용)
 # update.ps1 과 달리 git pull/npm install 없이 빠르게: 기존 워커 정리 후 이 PC host 워커만 기동.
 # 자동 실행 등록은 install-autostart.ps1 (PC당 1회) 참조.
 $ErrorActionPreference = 'Continue'
@@ -6,7 +6,7 @@ Set-Location -Path $PSScriptRoot
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $me = [System.Net.Dns]::GetHostName()
-Write-Host "=== Pocket Commander 워커 기동 ($me) $(Get-Date -Format 'yyyy-MM-dd HH:mm') ==="
+Write-Host "=== PCSS 워커 기동 ($me) $(Get-Date -Format 'yyyy-MM-dd HH:mm') ==="
 
 # 중복 방지: 기존 agent-runner 프로세스 종료
 Get-CimInstance Win32_Process -Filter "Name='node.exe'" |

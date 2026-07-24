@@ -1,4 +1,4 @@
-# Pocket Commander — OS 로그온 시 워커 자동 기동 등록 (이 PC에서 1회 실행)
+# PCSS — OS 로그온 시 워커 자동 기동 등록 (이 PC에서 1회 실행)
 # 로그온 1분 후 start-workers.ps1 을 실행하는 예약 작업을 만든다.
 # (시작 시점=AtStartup 이 아니라 로그온=AtLogOn 인 이유: claude CLI 구독 인증이
 #  사용자 프로필에 있어 SYSTEM 계정에선 동작하지 않기 때문.)

@@ -2,11 +2,11 @@ import './globals.css';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'POCKET COMMAND SYSTEM',
-  description: '주머니 속 지휘소 — 폰에서 지휘하는 AI 에이전트 관제 시스템',
+  title: 'POCKET COMMAND SUPPORTING SYSTEM',
+  description: '주머니 속 AI 작업팀 지휘통제 지원 시스템 — PCSS',
   // 홈 화면 설치(iOS/Android)용
   manifest: '/manifest.webmanifest',
-  appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'Command System' },
+  appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'PCSS' },
   icons: { icon: '/icon-192.png', apple: '/apple-touch-icon.png' },
 };
 
