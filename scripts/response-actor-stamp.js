@@ -123,13 +123,27 @@ try {
   //   (실측: t-f11a00a0·t-503fa463·t-659ac674 각 1건씩 유령 대응이 생성됨).
   //   파견 대응 프롬프트에서 헤더 작성을 금지했지만, 다른 벤더·다른 문구로 재발할 수 있으므로
   //   파싱 단계에서도 막는다. 펜스는 ``` 또는 ~~~ 로 시작하는 줄로 토글한다.
-  const headerIdx = [];
-  let inFence = false;
-  for (let i = 0; i < lines.length; i++) {
-    const t = lines[i].replace(/\r$/, '').trimStart();
-    if (t.startsWith('```') || t.startsWith('~~~')) { inFence = !inFence; continue; }
-    if (!inFence && HEADER_RE.test(lines[i])) headerIdx.push(i);
+  const scanHeaders = (useFence) => {
+    const idx = [];
+    let inFence = false;
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i].replace(/\r$/, '').trimStart();
+      if (useFence && (t.startsWith('```') || t.startsWith('~~~'))) { inFence = !inFence; continue; }
+      if (!inFence && HEADER_RE.test(lines[i])) idx.push(i);
+    }
+    return { idx, open: inFence };
+  };
+  // 안전판(감사 285b0463 관찰): 펜스 토글은 파일 전체를 하나의 상태로 훑으므로, 짝이 맞지 않는
+  //   펜스가 한 번이라도 들어오면 그 뒤의 진짜 헤더가 전부 '펜스 안'으로 오인돼 스탬프·통지가
+  //   조용히 멈춘다. append-only 파일이라 한 번 생기면 영구다. EOF 에서 펜스가 열린 채면
+  //   그 사실을 로그로 남기고 이번 실행만 펜스 비인식으로 폴백한다 — 인용 헤더를 다시 세는 대신
+  //   진짜 대응을 놓치지 않는 쪽을 택한다(오탐 < 누락).
+  let scan = scanHeaders(true);
+  if (scan.open) {
+    console.error('[response-actor-stamp] 대응이력.md 의 코드펜스가 닫히지 않았다 — 이번 실행은 펜스 비인식으로 폴백(인용 헤더가 섞일 수 있음). 파일의 펜스 균형을 점검하라.');
+    scan = scanHeaders(false);
   }
+  const headerIdx = scan.idx;
   const currentCount = headerIdx.length;
 
   // 첫 실행: 기존 이력을 baseline으로 기록만 하고 스탬프하지 않는다(과거 주체 오표식 방지).
