@@ -488,9 +488,10 @@ function appendMercHistory(a: Agent, cmdText: string, ok: boolean, output: strin
 // 가른다(claude-3tier-team 스킬 §4.5 — 지휘관이 폴더를 깔아둔 것 자체가 파견 스위치다).
 //
 // 파견 분대장은 소대 기준 브랜치에 커밋하지 않으므로 post-commit 감사 파이프라인(enqueue-audit.js)
-// 밖에 있다. → 태스크 완료 시점에 '<워커명> 감사관'(kind = 같은 벤더 CLI)이 agents에 등록돼 있으면
-// 산출물 감사 태스크를 적재한다. 감사관의 workdir는 파견 분대장 작업폴더와 동일(산출물을 직접 읽고
-// _audit/에 기록). 이후 감사→대응 자동 루프는 커밋 기반과 동일한 AUDITMETA 경로를 그대로 탄다.
+// 밖에 있다. → 태스크 완료 시점에 그 프로젝트의 감사관에게 산출물 감사 태스크를 적재한다.
+// 감사관은 프로젝트당 한 명이다 — 벤더별로 감사관을 따로 두지 않는다. 기록도 프로젝트 _audit
+// 한 곳(커밋 감사와 같은 감사이력.md)에 모은다. 이후 감사→대응 자동 루프는 커밋 기반과 동일한
+// AUDITMETA 경로를 그대로 탄다.
 // 무한루프 가드(커밋 파이프라인의 '_audit는 커밋 안 됨'과 동일 역할):
 //   ① 감사관 자신의 완료는 적재하지 않음(NAME '감사관' 접미) ② '[감사 대응]' 태스크 완료는 적재하지
 //   않음(대응→재감사 차단) ③ AUDITMETA 보유 태스크(감사 태스크 자체)는 적재하지 않음.
@@ -537,20 +538,32 @@ function recentOutputFiles(root: string, sinceMs: number): string[] {
 
 const VENDOR_LABEL: Record<string, string> = { codex: 'OpenAI Codex', grok: 'xAI Grok', antigravity: 'Google Antigravity' };
 
-async function enqueueDispatchAudit(self: Agent, task: { id: string; source_chat_id: string | null; command_text: string }, output: string, startedAt: number) {
-  const auditorName = `${self.name} 감사관`;
+// 감사관은 프로젝트당 한 명이다 — 벤더별로 감사관을 따로 두지 않는다. 파견 분대장의 산출물도
+// 그 프로젝트의 기존 감사관이 감사하고, 기록도 프로젝트 _audit 한 곳에 모인다(커밋 감사와 동일 폴더).
+// 감사관은 workdir 가 프로젝트 루트와 같고 이름이 '감사관' 으로 끝나는 agents 행으로 찾는다
+// (config/audit-projects.local.json 의 projectKey→auditor 매핑과 동일 결과, 경로 매핑 없이).
+async function findProjectAuditor(root: string): Promise<string | null> {
+  const { data } = await sb.from('agents').select('name,workdir').like('name', '%감사관');
+  const hit = (data || []).find((a: { name: string; workdir: string | null }) =>
+    a.workdir && path.resolve(a.workdir) === path.resolve(root));
+  return hit ? hit.name : null;
+}
+
+async function enqueueDispatchAudit(self: Agent, task: { id: string; source_chat_id: string | null; command_text: string }, output: string, startedAt: number, root: string) {
   try {
-    const { data: auditor } = await sb.from('agents').select('name').eq('name', auditorName).maybeSingle();
-    if (!auditor || !self.workdir) return; // 감사관 미등록이면 종전대로 감사 없음
-    const auditDir = path.join(self.workdir, '_audit').replace(/\\/g, '/');
+    if (!self.workdir) return;
+    const auditorName = await findProjectAuditor(root);
+    if (!auditorName) return; // 프로젝트 감사관 미등록이면 감사 없음
+    const auditDir = path.join(root, '_audit').replace(/\\/g, '/');
     try { fs.mkdirSync(auditDir, { recursive: true }); } catch { /* 감사관 실행 시 재시도됨 */ }
     const tid = 't-' + String(task.id).replace(/-/g, '').slice(0, 8);
     const one = (s: string, n: number) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
     const changed = recentOutputFiles(self.workdir, startedAt);
     // grok 감사관은 프롬프트가 argv 단일 라인(약 8K 한계)으로 전달되므로 요약 상한을 짧게 유지한다.
     const prompt =
-`[산출물 감사 — 산출물 읽기전용] 파견 분대장 '${self.name}'(${VENDOR_LABEL[self.kind] || self.kind})이 방금 작업 1건을 완료했다. 현재 작업 디렉터리가 그 워커의 작업폴더다.
+`[산출물 감사 — 산출물 읽기전용] 파견 분대장 '${self.name}'(${VENDOR_LABEL[self.kind] || self.kind})이 방금 작업 1건을 완료했다.
 
+[산출물 폴더] ${self.workdir.replace(/\\/g, '/')}  ← 감사 대상. 아래 파일 경로는 이 폴더 기준 상대경로다.
 [지시문(요약)] ${one(task.command_text, 1000)}
 [결과 보고(요약)] ${one(output, 1500)}
 [이번 작업에서 변경된 파일] ${changed.length ? changed.join(', ') : '탐지 없음 — 결과 보고에 언급된 파일을 직접 확인'}
@@ -564,13 +577,14 @@ async function enqueueDispatchAudit(self: Agent, task: { id: string; source_chat
 
 규칙:
 - 산출물 파일은 절대 수정하지 마라. 읽기·검토만.
-- 단 '_audit' 폴더에는 쓰기 허용. 감사 의견을 '_audit/감사이력.md'에 append 하라.
+- 단 '${auditDir}' 폴더에는 쓰기 허용. 감사 의견을 '${auditDir}/감사이력.md'에 append 하라
+  (커밋 감사와 같은 파일 — 프로젝트 감사 기록은 한 곳에 모은다).
 - 헤더 형식(그대로 사용): '## 커밋 ${tid} 감사 — <시각> (${auditorName})'
 - 첫 줄에 판정 [정상]/[경미]/[주의]/[중대], 이어서 기준별 근거·권고. 한국어로 간결하게.
-[[AUDITMETA project=merc:${self.name}|worker=${self.name}|auditDir=${auditDir}|commit=${tid}|host=${HOST}|actor=daemon]]`;
+[[AUDITMETA project=dispatch:${self.name}|worker=${self.name}|auditDir=${auditDir}|commit=${tid}|host=${HOST}|actor=daemon]]`;
     await sb.from('tasks').insert({ command_text: prompt, assigned_agent: auditorName, status: 'queued', source_chat_id: task.source_chat_id });
     console.log(`[${NAME}] → '${auditorName}'에게 산출물 감사 작업 자동 적재(${tid})`);
-  } catch (e) { console.error(`[${NAME}] 용병 감사 적재 실패(본류 무영향, 무시)`, e); }
+  } catch (e) { console.error(`[${NAME}] 파견 감사 적재 실패(본류 무영향, 무시)`, e); }
 }
 
 // 감사(1df393f5) 경미-2 조치: claude_code가 childEnv에서 ANTHROPIC 키를 delete하는 것과 달리
@@ -1077,10 +1091,10 @@ async function pickAndRun(self: Agent) {
     // ── 파견 분대장 산출물 자동 감사 적재 ─────────────
     // 성공 완료한 파견 분대장 본작업만 대상. 전용 2폴더가 없으면 그 벤더는 용병이므로 감사하지 않는다.
     // 루프 가드: 감사관 자신·[감사 대응]·감사 태스크(AUDITMETA)는 제외.
-    if (r.ok && !current.killed && VENDOR_CLI_KINDS.has(self.kind) && NAME && !NAME.endsWith('감사관')
-        && !task.command_text.trimStart().startsWith('[감사 대응]') && !parseAuditMeta(task.command_text)
-        && dispatchRoot(self.workdir, self.kind)) {
-      await enqueueDispatchAudit(self, task, r.output, startedAt);
+    const dRoot = VENDOR_CLI_KINDS.has(self.kind) ? dispatchRoot(self.workdir, self.kind) : null;
+    if (r.ok && !current.killed && dRoot && NAME && !NAME.endsWith('감사관')
+        && !task.command_text.trimStart().startsWith('[감사 대응]') && !parseAuditMeta(task.command_text)) {
+      await enqueueDispatchAudit(self, task, r.output, startedAt, dRoot);
     }
 
     // ── 감사 → 대응 자동 루프 ──────────────────────────────────
