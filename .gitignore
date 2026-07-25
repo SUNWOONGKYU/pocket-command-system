@@ -68,3 +68,7 @@ scripts/*.local.txt
 # 워커(예: 에코)가 언젠가 codex/grok kind로 바뀌면 여기 바로 생길 수 있어 _attachments/와 동일 사유로 예방적 제외.
 /.codex/
 /.grok/
+
+# 로컬 내부 산출물(운영 실데이터·PII 포함 가능) — 공개 repo 실수 커밋 방지. 2026-07-25.
+docs/Pocket Command System.txt
+scripts/fb-insights-fetch.js
