@@ -462,9 +462,9 @@ function mercGuard(scope: { root: string | null; full: boolean }): string {
 // 태스크 이력은 Supabase에 있지만 용병 프로세스는 DB 접근이 없으므로(externalCliEnv가 키 스트립),
 // 완료·실패 시마다 작업폴더 _작업이력.md에 요약을 append해 다음 세션이 읽게 한다(EXTERNAL_GUARD가 안내).
 // best-effort — 기록 실패가 워커 본연 루프를 방해하지 않는다. 파일은 100KB 초과 시 뒤쪽 60KB만 남긴다.
-const MERC_KINDS = new Set(['codex', 'grok', 'antigravity']);
+const VENDOR_CLI_KINDS = new Set(['codex', 'grok', 'antigravity']);
 function appendMercHistory(a: Agent, cmdText: string, ok: boolean, output: string) {
-  if (!MERC_KINDS.has(a.kind) || !a.workdir) return;
+  if (!VENDOR_CLI_KINDS.has(a.kind) || !a.workdir) return;
   try {
     const one = (s: string, n: number) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
     const p = path.join(a.workdir, '_작업이력.md');
@@ -480,17 +480,42 @@ function appendMercHistory(a: Agent, cmdText: string, ok: boolean, output: strin
   } catch { /* 이력은 부가 정보 — 실패 무시 */ }
 }
 
-// ── 용병 산출물 자동 감사 (PO 지시 2026-07-17: 용병에게도 같은 벤더 AI를 감사관으로) ──────
-// 용병은 커밋을 만들지 않아 post-commit 감사 파이프라인(enqueue-audit.js) 밖에 있다.
-// → 태스크 완료 시점에 '<용병명> 감사관'(kind = 같은 벤더 CLI)이 agents에 등록돼 있으면
-//   산출물 감사 태스크를 적재한다. 감사관의 workdir는 용병 작업폴더와 동일(산출물을 직접 읽고
-//   _audit/에 기록). 이후 감사→대응 자동 루프는 커밋 기반과 동일한 AUDITMETA 경로를 그대로 탄다.
+// ── 파견 분대장 산출물 자동 감사 ────────────────────────────────────────────
+// 대상은 '파견 분대장'뿐이다. 같은 벤더 CLI라도 용병으로 일할 때는 감사하지 않는다.
+//   파견 분대장 = 실작업 단위(파일 수정·산출물 생성). 감사 대상.
+//   용병       = 단발 자문(의견 텍스트만 회수). 작업공간·산출물이 없으므로 감사 대상 아님.
+// 파견/용병 분기는 전용 2폴더(`<vendor>-worktree` + `<vendor>-artifacts`) 존재 여부로 결정론적으로
+// 가른다(claude-3tier-team 스킬 §4.5 — 지휘관이 폴더를 깔아둔 것 자체가 파견 스위치다).
+//
+// 파견 분대장은 소대 기준 브랜치에 커밋하지 않으므로 post-commit 감사 파이프라인(enqueue-audit.js)
+// 밖에 있다. → 태스크 완료 시점에 '<워커명> 감사관'(kind = 같은 벤더 CLI)이 agents에 등록돼 있으면
+// 산출물 감사 태스크를 적재한다. 감사관의 workdir는 파견 분대장 작업폴더와 동일(산출물을 직접 읽고
+// _audit/에 기록). 이후 감사→대응 자동 루프는 커밋 기반과 동일한 AUDITMETA 경로를 그대로 탄다.
 // 무한루프 가드(커밋 파이프라인의 '_audit는 커밋 안 됨'과 동일 역할):
 //   ① 감사관 자신의 완료는 적재하지 않음(NAME '감사관' 접미) ② '[감사 대응]' 태스크 완료는 적재하지
 //   않음(대응→재감사 차단) ③ AUDITMETA 보유 태스크(감사 태스크 자체)는 적재하지 않음.
 // 커밋 해시 대신 태스크 id 앞 8자를 't-xxxxxxxx' 식별자로 써서 기존 중복 대응 가드('## 커밋 <id>'
 // 헤더 존재 검사)·대응이력 헤더 관행이 무변경으로 재사용된다.
-function recentMercFiles(root: string, sinceMs: number): string[] {
+
+// 파견 분대장 판정 — 전용 2폴더가 있으면 파견 분대장, 없으면 용병(감사 없음).
+// 워커 workdir가 폴더 쌍이 놓인 프로젝트 루트의 하위일 수 있어(예: <project>/_agentwork/codex-cli)
+// workdir에서 위로 4단계까지 올라가며 쌍을 찾는다. 찾으면 그 프로젝트 루트, 없으면 null.
+function dispatchRoot(workdir: string | null, kind: string): string | null {
+  if (!workdir) return null;
+  let dir = path.resolve(workdir);
+  for (let i = 0; i <= 4; i++) {
+    try {
+      const pair = [`${kind}-worktree`, `${kind}-artifacts`];
+      if (pair.every((n) => fs.statSync(path.join(dir, n)).isDirectory())) return dir.replace(/\\/g, '/');
+    } catch { /* 이 단계엔 쌍이 없음 — 상위로 */ }
+    const up = path.dirname(dir);
+    if (up === dir) break; // 드라이브 루트 도달
+    dir = up;
+  }
+  return null;
+}
+
+function recentOutputFiles(root: string, sinceMs: number): string[] {
   // 이번 태스크 실행 중 변경된 산출물 후보(mtime 기준) — 감사관에게 검토 대상 힌트로 전달.
   // _audit/·_작업이력.md·숨김 폴더는 제외(감사 부산물·이력·샌드박스 잡음). best-effort.
   const out: string[] = [];
@@ -510,21 +535,21 @@ function recentMercFiles(root: string, sinceMs: number): string[] {
   return out;
 }
 
-const MERC_VENDOR: Record<string, string> = { codex: 'OpenAI Codex', gemini: 'Google Gemini', grok: 'xAI Grok', antigravity: 'Google Antigravity' };
+const VENDOR_LABEL: Record<string, string> = { codex: 'OpenAI Codex', grok: 'xAI Grok', antigravity: 'Google Antigravity' };
 
-async function enqueueMercAudit(self: Agent, task: { id: string; source_chat_id: string | null; command_text: string }, output: string, startedAt: number) {
+async function enqueueDispatchAudit(self: Agent, task: { id: string; source_chat_id: string | null; command_text: string }, output: string, startedAt: number) {
   const auditorName = `${self.name} 감사관`;
   try {
     const { data: auditor } = await sb.from('agents').select('name').eq('name', auditorName).maybeSingle();
-    if (!auditor || !self.workdir) return; // 감사관 미등록 용병은 종전대로 감사 없음
+    if (!auditor || !self.workdir) return; // 감사관 미등록이면 종전대로 감사 없음
     const auditDir = path.join(self.workdir, '_audit').replace(/\\/g, '/');
     try { fs.mkdirSync(auditDir, { recursive: true }); } catch { /* 감사관 실행 시 재시도됨 */ }
     const tid = 't-' + String(task.id).replace(/-/g, '').slice(0, 8);
     const one = (s: string, n: number) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
-    const changed = recentMercFiles(self.workdir, startedAt);
+    const changed = recentOutputFiles(self.workdir, startedAt);
     // grok 감사관은 프롬프트가 argv 단일 라인(약 8K 한계)으로 전달되므로 요약 상한을 짧게 유지한다.
     const prompt =
-`[산출물 감사 — 산출물 읽기전용] 워커 '${self.name}'(${MERC_VENDOR[self.kind] || self.kind})이 방금 작업 1건을 완료했다. 현재 작업 디렉터리가 그 워커의 작업폴더다.
+`[산출물 감사 — 산출물 읽기전용] 파견 분대장 '${self.name}'(${VENDOR_LABEL[self.kind] || self.kind})이 방금 작업 1건을 완료했다. 현재 작업 디렉터리가 그 워커의 작업폴더다.
 
 [지시문(요약)] ${one(task.command_text, 1000)}
 [결과 보고(요약)] ${one(output, 1500)}
@@ -1007,7 +1032,7 @@ async function pickAndRun(self: Agent) {
     }
 
     const adapter = ADAPTERS[self.kind] || runClaudeApi;
-    const startedAt = Date.now(); // 용병 산출물 감사의 변경 파일 탐지 기준점(enqueueMercAudit)
+    const startedAt = Date.now(); // 파견 분대장 산출물 감사의 변경 파일 탐지 기준점(enqueueDispatchAudit)
     let r = await adapter(commandText, self);
     if (current.killed) r = { ok: false, output: '⛔ 사용자 중단' };
 
@@ -1049,11 +1074,13 @@ async function pickAndRun(self: Agent) {
     await telegram(task.source_chat_id, `${icon} <b>${escHtml(NAME!)}</b> ${verb}\n${mdToTelegram(r.output)}`);
     console.log(`[${NAME}] ${icon} ${verb}`);
 
-    // ── 용병 산출물 자동 감사 적재 (PO 지시 2026-07-17) ─────────────
-    // 성공 완료한 용병 본작업만 대상. 루프 가드: 감사관 자신·[감사 대응]·감사 태스크(AUDITMETA)는 제외.
-    if (r.ok && !current.killed && MERC_KINDS.has(self.kind) && NAME && !NAME.endsWith('감사관')
-        && !task.command_text.trimStart().startsWith('[감사 대응]') && !parseAuditMeta(task.command_text)) {
-      await enqueueMercAudit(self, task, r.output, startedAt);
+    // ── 파견 분대장 산출물 자동 감사 적재 ─────────────
+    // 성공 완료한 파견 분대장 본작업만 대상. 전용 2폴더가 없으면 그 벤더는 용병이므로 감사하지 않는다.
+    // 루프 가드: 감사관 자신·[감사 대응]·감사 태스크(AUDITMETA)는 제외.
+    if (r.ok && !current.killed && VENDOR_CLI_KINDS.has(self.kind) && NAME && !NAME.endsWith('감사관')
+        && !task.command_text.trimStart().startsWith('[감사 대응]') && !parseAuditMeta(task.command_text)
+        && dispatchRoot(self.workdir, self.kind)) {
+      await enqueueDispatchAudit(self, task, r.output, startedAt);
     }
 
     // ── 감사 → 대응 자동 루프 ──────────────────────────────────
