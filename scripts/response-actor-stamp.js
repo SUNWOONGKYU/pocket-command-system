@@ -37,12 +37,20 @@ let REPO_ROOT = null;
 //   콕핏 인박스가 events(event_type='audit_response')를 구독해 표시하고, 텔레그램은 능동 알림.
 //   전부 best-effort — 실패해도 절대 턴을 막지 않는다(fire-and-forget, exit는 상위에서 0).
 // Stop 훅은 턴 종료를 붙잡는다. 상대가 응답 없이 매달리면(블랙홀) "절대 턴을 막지 않는다"는 위 약속이
-//   깨지므로, 형제 훅 platoon-session-hook.js 와 동일하게 3초 AbortController 로 끊는다(감사 06afab9c ⓐ).
-//   대응이 여러 건이면 순차 await 라 지연이 누적되던 것도 이 상한으로 묶인다.
+//   깨지므로 3초 AbortController 로 끊는다(감사 06afab9c ⓐ).
+//   ★단 3초는 fetch '1회당'이다 — 대응이 여러 건이면 순차 await 라 3초 × (건수 × 2) 로 누적돼
+//   훅 전역 타임아웃(10초)을 넘길 수 있다(검토 지적 ⑥). 그래서 훅 전체에도 데드라인을 둔다:
+//   남은 예산이 없으면 이후 통지는 그냥 건너뛴다(통지는 부가 기능 — 턴을 붙잡는 것보다 낫다).
 const FETCH_TIMEOUT_MS = 3000;
+const NOTIFY_DEADLINE_MS = 6000; // 훅 전역 타임아웃(10초) 안쪽으로 여유를 남긴다
+let notifyDeadlineAt = Infinity;
+const budgetLeft = () => notifyDeadlineAt - Date.now();
+
 async function fetchWithTimeout(input, init) {
+  const left = budgetLeft();
+  if (left <= 0) throw new Error('notify deadline exceeded');
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), Math.min(FETCH_TIMEOUT_MS, left));
   try { return await fetch(input, { ...init, signal: ac.signal }); }
   finally { clearTimeout(timer); }
 }
@@ -80,8 +88,9 @@ async function notifyLeaderResponse(repoName, headerLine, bodyLine) {
   }
 }
 
-// 대응 헤더: '## 커밋 <hash|t-id> ... 대응 ...' (재수신/3차 수신 등 변종 포함). 커밋 파이프라인·용병 산출물(t-) 공통.
-const HEADER_RE = /^## 커밋 (?:t-)?[0-9a-f]{6,40}\b.*대응/;
+// 대응 헤더 스캐너는 단일 출처를 쓴다 — 재적재 가드(worker/agent-runner.ts)·SessionStart 주입
+//   (session-audit-check.js)과 같은 규칙(코드펜스 인용 제외)이어야 한 쪽만 인용 헤더를 세는 어긋남이 없다.
+const RESP_SCAN = require('./audit-response-scan.cjs');
 
 function findAuditDir(startCwd) {
   // cwd에서 위로 걸어 올라가며 _audit/대응이력.md를 가진 repo 루트를 찾는다(최대 12단계).
@@ -123,40 +132,24 @@ try {
   //   (실측: t-f11a00a0·t-503fa463·t-659ac674 각 1건씩 유령 대응이 생성됨).
   //   파견 대응 프롬프트에서 헤더 작성을 금지했지만, 다른 벤더·다른 문구로 재발할 수 있으므로
   //   파싱 단계에서도 막는다. 펜스는 ``` 또는 ~~~ 로 시작하는 줄로 토글한다.
-  const scanHeaders = (useFence) => {
-    const idx = [];
-    let inFence = false;
-    for (let i = 0; i < lines.length; i++) {
-      const t = lines[i].replace(/\r$/, '').trimStart();
-      if (useFence && (t.startsWith('```') || t.startsWith('~~~'))) { inFence = !inFence; continue; }
-      if (!inFence && HEADER_RE.test(lines[i])) idx.push(i);
-    }
-    return { idx, open: inFence };
-  };
-  // 안전판(감사 285b0463 관찰): 펜스 토글은 파일 전체를 하나의 상태로 훑으므로, 짝이 맞지 않는
-  //   펜스가 한 번이라도 들어오면 그 뒤의 진짜 헤더가 전부 '펜스 안'으로 오인돼 스탬프·통지가
-  //   조용히 멈춘다. append-only 파일이라 한 번 생기면 영구다. EOF 에서 펜스가 열린 채면
-  //   그 사실을 로그로 남기고 이번 실행만 펜스 비인식으로 폴백한다 — 인용 헤더를 다시 세는 대신
-  //   진짜 대응을 놓치지 않는 쪽을 택한다(오탐 < 누락).
-  let scan = scanHeaders(true);
-  if (scan.open) {
+  // 헤더 스캔은 공용 스캐너(코드펜스 인용 제외 + 미닫힘 폴백)를 쓴다 — 재적재 가드·SessionStart 주입과
+  //   같은 규칙이어야 한 쪽만 인용 헤더를 세는 어긋남이 생기지 않는다(검토 지적 ①).
+  const headerIdx = RESP_SCAN.scanSafe(lines, () => {
     console.error('[response-actor-stamp] 대응이력.md 의 코드펜스가 닫히지 않았다 — 이번 실행은 펜스 비인식으로 폴백(인용 헤더가 섞일 수 있음). 파일의 펜스 균형을 점검하라.');
-    scan = scanHeaders(false);
-  }
-  const headerIdx = scan.idx;
-  const currentCount = headerIdx.length;
+  }).indices;
 
-  // 첫 실행: 기존 이력을 baseline으로 기록만 하고 스탬프하지 않는다(과거 주체 오표식 방지).
-  if (!state || typeof state.stampedThrough !== 'number') {
-    fs.writeFileSync(statePath, JSON.stringify({ stampedThrough: currentCount, mtimeMs }));
+  // ★상태는 '헤더 개수'가 아니라 '처리한 줄 수(워터마크)'로 둔다(검토 지적 ②).
+  //   개수 기준이면 파싱 규칙이 바뀔 때 총수가 흔들려, 새 대응이 이미 처리된 것으로 오인돼 조용히
+  //   누락된다(예: 구파싱 146 → 신파싱 143이면 그 사이 새 대응이 루프에 들어오지 못함).
+  //   대응이력.md는 append-only 이므로 줄 수는 단조 증가하고 파싱 규칙과 무관하다 — 그 아래는 과거분,
+  //   그 위는 이번에 새로 붙은 분으로 항상 정확히 갈린다.
+  //   (구 상태 파일은 stampedThrough 만 갖는다 → 워터마크가 없으면 지금 줄 수를 baseline 으로 삼는다.
+  //    한 번은 그 시점 이전 미처리분을 건너뛰지만, 과거분을 잘못된 주체로 표식하는 것보다 안전하다.)
+  const totalLines = lines.length;
+  if (!state || typeof state.stampedThroughLine !== 'number') {
+    fs.writeFileSync(statePath, JSON.stringify({ stampedThroughLine: totalLines, mtimeMs }));
     return;
   }
-
-  // 파싱 규칙이 바뀌어(코드펜스 제외 도입) 헤더 총수가 줄면, 저장된 stampedThrough 가 현재 총수보다
-  //   커진다. 그대로 두면 그 차이만큼 새 대응이 루프에 들어오지 못해 조용히 스탬프·통지가 누락된다.
-  //   현재 총수로 내려 맞춘다 — 이미 스탬프된 줄은 아래 '[actor:' 멱등 검사에서 건너뛰므로
-  //   재스탬프·재통지는 일어나지 않는다.
-  if (state.stampedThrough > currentCount) state.stampedThrough = currentCount;
 
   const actor = (process.env.PCSS_ACTOR || '').trim();
   const isLeader = !actor; // PCSS_ACTOR 없음 = 대화형(leader) 세션
@@ -164,9 +157,9 @@ try {
 
   let changed = false;
   const newLeaderResponses = []; // 이번 턴 새로 생긴 leader 대응 → DB events + 텔레그램 대상
-  for (let rank = state.stampedThrough; rank < currentCount; rank++) {
-    const li = headerIdx[rank];
-    if (li == null) continue;
+  // 워터마크 위(=이번에 새로 append된 구간)의 헤더만 대상. 그 아래는 과거분이라 건드리지 않는다.
+  for (const li of headerIdx) {
+    if (li < state.stampedThroughLine) continue;
     let line = lines[li];
     if (line.includes('[actor:')) continue; // 멱등 — 이미 표식된 줄은 건드리지 않음
     const cr = line.endsWith('\r') ? '\r' : '';
@@ -184,10 +177,13 @@ try {
   if (changed) fs.writeFileSync(respFile, lines.join('\n'));
   // 쓰기 뒤 최신 mtime을 저장해야 다음 턴 bail-check가 맞는다.
   const newMtime = fs.statSync(respFile).mtimeMs;
-  fs.writeFileSync(statePath, JSON.stringify({ stampedThrough: currentCount, mtimeMs: newMtime }));
+  fs.writeFileSync(statePath, JSON.stringify({ stampedThroughLine: totalLines, mtimeMs: newMtime }));
 
   // ── 대화형 대응 → DB events + PO 텔레그램 (best-effort, 순차) ──
+  //   훅 전체 데드라인 안에서만 돈다 — 예산이 끝나면 남은 통지는 건너뛴다(턴을 붙잡지 않는다).
+  notifyDeadlineAt = Date.now() + NOTIFY_DEADLINE_MS;
   for (const r of newLeaderResponses) {
+    if (budgetLeft() <= 0) { console.error(`[response-actor-stamp] 통지 예산(${NOTIFY_DEADLINE_MS}ms) 소진 — 남은 ${newLeaderResponses.length - newLeaderResponses.indexOf(r)}건 통지 생략(스탬프는 완료).`); break; }
     await notifyLeaderResponse(repoName, r.header, r.body);
   }
 } catch (e) {

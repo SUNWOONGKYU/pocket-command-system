@@ -11,7 +11,7 @@ const { execSync } = require('child_process');
 const ENV_PATH = path.join(__dirname, '..', '.env.local');
 // 무결성 기록기는 pocket-commander 안에 있지만 감사관 cwd는 프로젝트마다 다르다 — 절대경로로 호출한다.
 const INTEGRITY_SCRIPT = path.join(__dirname, 'audit-integrity-check.js').replace(/\\/g, '/');
-const AUDIT_PATHS = require('./audit-paths.js'); // 감사 경로 규칙 단일 출처
+const AUDIT_PATHS = require('./audit-paths.cjs'); // 감사 경로 규칙 단일 출처
 
 // 프로젝트별 설정(worker·auditor·criteria)은 공개본에 실데이터가 tracked되지 않도록 JSON으로 외부화했다.
 //   config/audit-projects.local.json(운영 실데이터, gitignore) 있으면 그걸, 없으면

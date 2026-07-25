@@ -37,10 +37,20 @@ try {
   const auditText = fs.readFileSync(auditFile, 'utf8');
   const respText = fs.existsSync(respFile) ? fs.readFileSync(respFile, 'utf8') : '';
 
-  const audited = extractHashes(auditText, /## 커밋 ([0-9a-f]{6,40}) 감사/g);
-  const responded = extractHashes(respText, /## 커밋 ([0-9a-f]{6,40})/g);
+  // 파견 산출물 감사(t-)도 포함한다 — 자동 대응이 실패하면 사람이 확인해야 하는데 전엔 목록에
+  //   아예 오르지 않았다(검토 지적 ⑦).
+  const audited = extractHashes(auditText, /## 커밋 ((?:t-)?[0-9a-f]{6,40}) 감사/g);
+  // 대응 존재 판정은 공용 스캐너 — 원문 정규식으로 세면 파견 분대장이 ```md 블록으로 되돌려 보낸
+  //   '인용 헤더'가 실제 대응으로 읽혀 미응답이 목록에서 사라진다(검토 지적 ①).
+  const responded = require('./audit-response-scan.cjs').respondedIds(respText);
 
-  const pending = [...audited].filter((h) => !responded.has(h));
+  // ★판정 게이트(PO 지시 2026-07-25): 꼭 고쳐야 하는 것만 띄운다.
+  //   전엔 [정상]·[경미]까지 전부 주입돼, 세션마다 조치 불요 건에 일일이 입장을 쓰느라 낭비가 컸다.
+  //   [주의]/[중대]와 판정 불명만 남긴다 — 나머지는 감사이력 파일에 그대로 있고 필요할 때 읽으면 된다.
+  const ACTIONABLE = new Set(['주의', '중대']);
+  const pending = [...audited]
+    .filter((h) => !responded.has(h))
+    .filter((h) => { const v = verdictOf(auditText, h); return !v || ACTIONABLE.has(v); });
   if (!pending.length) process.exit(0);
 
   const lines = ['=== 미응답 감사 의견 있음 (pocket-commander _audit/, 자동 주입) ==='];

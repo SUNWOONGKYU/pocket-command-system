@@ -51,7 +51,7 @@ const crypto = require('crypto');
 // 경로 규칙(vault 위치)은 audit-paths.js 단일 출처를 쓴다 — 전엔 이 파일·enqueue-audit.js·
 //   worker/agent-runner.ts 세 곳에 복제돼 있었고, 어긋나면 원본과 해시가 갈라진다(감사 0c404686 관찰 ⓑ).
 // 대상 저장소는 --repo <경로>, vault를 직접 지정하려면 --vault <경로>. 둘 다 없으면 이 스크립트가 속한 저장소.
-const { vaultDirFor } = require('./audit-paths.js');
+const { vaultDirFor } = require('./audit-paths.cjs');
 function argOf(flag) {
   const i = process.argv.indexOf(flag);
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : null;

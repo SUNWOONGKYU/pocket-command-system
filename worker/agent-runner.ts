@@ -16,11 +16,14 @@ import ws from 'ws';
 
 // 감사 경로 규칙(vault·_audit)의 단일 출처 — 스크립트(CJS)와 공유해야 규칙이 갈라지지 않는다.
 // tsx 는 CJS 로 실행되므로 require 로 그대로 물어온다(전용 .d.ts 를 두지 않기 위해 형 선언을 명시).
-const AUDIT_PATHS = require('../scripts/audit-paths.js') as {
+const AUDIT_PATHS = require('../scripts/audit-paths.cjs') as {
   vaultDirFor(repoRoot: string): string;
   auditDirFor(repoRoot: string): string;
   posix(p: string): string;
 };
+// 대응이력 헤더 스캐너도 단일 출처 — Stop 훅·SessionStart 주입과 같은 규칙(코드펜스 인용 제외)을 써야
+// 인용 헤더가 '이미 대응함'으로 읽혀 정당한 대응 요청이 막히는 일이 없다.
+const RESP_SCAN = require('../scripts/audit-response-scan.cjs') as { respondedIds(text: string): Set<string> };
 
 // Node 20(<22)은 전역 WebSocket이 없어 supabase-js createClient가 throw한다 → ws로 폴리필.
 if (!(globalThis as any).WebSocket) (globalThis as any).WebSocket = ws as any;
@@ -539,26 +542,57 @@ const SCAN_VISIT_BUDGET = 5000;
 //   scanDirs: 실제로 훑을 폴더들(파견은 <root>/<kind>-worktree·<kind>-artifacts 둘 다).
 //   relBase : 반환 경로의 기준(감사 프롬프트가 안내하는 폴더와 같아야 감사관이 파일을 찾을 수 있다).
 // best-effort — 실패는 조용히 건너뛴다.
-function recentOutputFiles(scanDirs: string[], relBase: string, sinceMs: number): string[] {
-  const out: string[] = [];
-  let visited = 0;
-  const walk = (dir: string, depth: number) => {
-    if (depth > 3 || out.length >= 20 || visited >= SCAN_VISIT_BUDGET) return;
-    let entries: fs.Dirent[] = [];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (out.length >= 20 || visited >= SCAN_VISIT_BUDGET) return;
-      visited++;
-      if (e.name.startsWith('.') || e.name === '_audit' || e.name === '_작업이력.md') continue;
-      if (e.isDirectory() && SCAN_SKIP_DIRS.has(e.name)) continue;
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) walk(p, depth + 1);
-      else { try { if (fs.statSync(p).mtimeMs >= sinceMs) out.push(path.relative(relBase, p).replace(/\\/g, '/')); } catch { /* 파일 소멸 등 — 무시 */ } }
-    }
+// 스캔 루트 정규화 — 같은 폴더가 두 번 들어오거나 한쪽이 다른 쪽 하위면 같은 파일을 중복 집계하고
+//   출력 상한·방문 예산을 이중으로 태운다(검토 지적 ③). realpath 로 실경로를 맞춘 뒤 중복·중첩을 뺀다.
+function normalizeScanRoots(dirs: string[]): string[] {
+  const real: string[] = [];
+  for (const d of dirs) {
+    let p: string;
+    try { p = fs.realpathSync(path.resolve(d)); } catch { continue; } // 없는 폴더는 제외
+    try { if (!fs.statSync(p).isDirectory()) continue; } catch { continue; }
+    if (!real.includes(p)) real.push(p);
+  }
+  const under = (child: string, parent: string) => {
+    const rel = path.relative(parent, child);
+    return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
   };
-  for (const d of scanDirs) walk(path.resolve(d), 0);
-  if (visited >= SCAN_VISIT_BUDGET) console.log(`[${NAME}] 산출물 스캔 예산 소진(${SCAN_VISIT_BUDGET} 엔트리) — 힌트 목록이 일부만 담겼을 수 있음`);
-  return out;
+  return real.filter((d) => !real.some((o) => o !== d && under(d, o)));
+}
+
+// 반환 경로는 relBase 기준 상대경로. 예산은 루트마다 따로 준다 — 한 루트가 크다고 뒤 루트가
+//   통째로 안 읽히면(검토 지적 ③) 정작 봐야 할 산출물을 놓친다.
+// 반환: { files, truncated } — truncated 는 상한/예산에 걸려 목록이 잘렸는지. 감사관에게 그대로 알린다
+//   (검토 지적 ⑤: 잘린 사실이 콘솔에만 남으면 감사관은 '변경 없음'으로 오해한다).
+function recentOutputFiles(scanDirs: string[], relBase: string, sinceMs: number): { files: string[]; truncated: boolean } {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  let truncated = false;
+  for (const root of normalizeScanRoots(scanDirs)) {
+    let visited = 0;
+    const walk = (dir: string, depth: number) => {
+      if (out.length >= 20 || visited >= SCAN_VISIT_BUDGET) { truncated = true; return; }
+      if (depth > 3) { truncated = true; return; }
+      let entries: fs.Dirent[] = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        if (out.length >= 20 || visited >= SCAN_VISIT_BUDGET) { truncated = true; return; }
+        visited++;
+        if (e.name.startsWith('.') || e.name === '_audit' || e.name === '_작업이력.md') continue;
+        if (e.isDirectory() && SCAN_SKIP_DIRS.has(e.name)) continue;
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p, depth + 1);
+        else {
+          try {
+            if (fs.statSync(p).mtimeMs < sinceMs) continue;
+            const rel = path.relative(relBase, p).replace(/\\/g, '/');
+            if (!seen.has(rel)) { seen.add(rel); out.push(rel); }
+          } catch { /* 파일 소멸 등 — 무시 */ }
+        }
+      }
+    };
+    walk(root, 0);
+  }
+  return { files: out, truncated };
 }
 
 const VENDOR_LABEL: Record<string, string> = { codex: 'OpenAI Codex', grok: 'xAI Grok', antigravity: 'Google Antigravity' };
@@ -639,10 +673,11 @@ async function enqueueDispatchAudit(self: Agent, task: { id: string; source_chat
     //   상대경로 기준(relBase)은 공통 상위인 root — self.workdir 은 dispatchRoot 가 위로 올라가며
     //   찾은 결과이므로 항상 root 하위다. 따라서 '_agentwork/codex-cli/...' 와 'codex-worktree/...' 가
     //   경로만 봐도 구분된다. 스캔 예산·제외 목록이 있으므로 대상을 넓혀도 순회 비용은 묶여 있다.
-    const scanDirs = [self.workdir, path.join(root, `${self.kind}-worktree`), path.join(root, `${self.kind}-artifacts`)]
-      .filter((d) => { try { return fs.statSync(d).isDirectory(); } catch { return false; } });
-    const targetLabel = `${AUDIT_PATHS.posix(root)}  (감사 대상: ${scanDirs.map((d) => AUDIT_PATHS.posix(path.relative(root, d)) || '.').join(' · ')})`;
-    const changed = recentOutputFiles(scanDirs.length ? scanDirs : [self.workdir], root, startedAt);
+    //   중복·중첩은 normalizeScanRoots 가 정리한다(같은 폴더 두 번, 한쪽이 다른 쪽 하위인 경우).
+    const scanDirs = normalizeScanRoots([self.workdir, path.join(root, `${self.kind}-worktree`), path.join(root, `${self.kind}-artifacts`)]);
+    const targetLabel = `${AUDIT_PATHS.posix(root)}  (감사 대상: ${(scanDirs.length ? scanDirs : [self.workdir]).map((d) => AUDIT_PATHS.posix(path.relative(root, d)) || '.').join(' · ')})`;
+    const scan = recentOutputFiles(scanDirs.length ? scanDirs : [self.workdir], root, startedAt);
+    const changed = scan.files;
     // grok 감사관은 프롬프트가 argv 단일 라인(약 8K 한계)으로 전달되므로 요약 상한을 짧게 유지한다.
     const prompt =
 `[산출물 감사 — 산출물 읽기전용] 파견 분대장 '${self.name}'(${VENDOR_LABEL[self.kind] || self.kind})이 방금 작업 1건을 완료했다.
@@ -650,7 +685,8 @@ async function enqueueDispatchAudit(self: Agent, task: { id: string; source_chat
 [산출물 폴더] ${targetLabel}  ← 감사 대상. 아래 파일 경로는 이 폴더 기준 상대경로다.
 [지시문(요약)] ${one(task.command_text, 1000)}
 [결과 보고(요약)] ${one(output, 1500)}
-[이번 작업에서 변경된 파일] ${changed.length ? changed.join(', ') : '탐지 없음 — 결과 보고에 언급된 파일을 직접 확인'}
+[이번 작업에서 변경된 파일] ${changed.length ? changed.join(', ') : '탐지 없음 — 결과 보고에 언급된 파일을 직접 확인'}${scan.truncated ? '\n[주의] 위 목록은 상한(20건)·탐색 예산에 걸려 잘렸다 — 전부가 아니다. 결과 보고에 언급된 파일을 직접 확인하라.' : ''}
+[스캔 제외] 숨김 항목(.으로 시작)·_audit·_작업이력.md·의존성/빌드 폴더(node_modules·dist·build·out·target·vendor 등)는 목록에서 빠진다. 그런 위치가 이번 작업의 산출물이면 직접 열어 확인하라.
 
 너는 '${auditorName}'이다. 위 작업 산출물을 감사하라. 5기준:
 ① 정확성 — 산출물이 지시를 실제로 충족하는가. 가짜/샘플 데이터·항상 실패하는 분기가 실동작처럼 표현되지 않았는가.
@@ -1201,6 +1237,17 @@ async function pickAndRun(self: Agent) {
     // (감사관은 자동 전용 — 이 대응 적재는 승인된 감사 지원 절차로 원 작업 소대의 legacy worker 큐에 연결한다.)
     if (r.ok && NAME && NAME.endsWith('감사관')) {
       const meta = parseAuditMeta(task.command_text);
+      // ★판정 게이트(PO 지시 2026-07-25): 꼭 고쳐야 하는 지적만 대응을 돌린다.
+      //   전엔 판정과 무관하게 감사 1건마다 대응 워커 1회가 돌았다 — [정상]/[경미]인데도 세션 하나를
+      //   통째로 써서 "수용, 조치 불요"를 받아내는 구조였다. 커밋 7건이 연쇄한 날 그 낭비가 그대로
+      //   7배가 됐다. [주의]/[중대]만 대응을 적재하고, 그 아래는 감사 기록만 남기고 넘어간다.
+      //   (사람이 봐야 할 [주의]/[중대]는 아래 텔레그램·SessionStart 주입 경로로 여전히 뜬다.)
+      const verdict = (r.output.match(/\[(정상|경미|주의|중대)\]/) || [])[1] || null;
+      const needsResponse = verdict === '주의' || verdict === '중대' || verdict === null; // 판정 불명이면 안전하게 대응
+      if (meta && !needsResponse) {
+        console.log(`[${NAME}] 판정 [${verdict}] — 대응 불요, 감사 기록만 남기고 종료(${meta.commit || ''})`);
+        return;
+      }
       if (meta) {
         // actor=interactive(대화형 Claude Code 세션이 만든 커밋)면, 그 일을 안 한 유휴 워커에게
         // '대응 작업'을 떠넘기지 않는다 — 그 워커는 맥락이 없어 전체를 다시 뒤져야 하고(토큰 낭비),
@@ -1213,10 +1260,13 @@ async function pickAndRun(self: Agent) {
           // 대응 태스크도 그때마다 재적재돼 워커 세션 1회분 토큰이 낭비된다(당일 3건 실측).
           // 대응이력.md에 이 커밋 헤더가 이미 있으면 워커가 응답을 마친 것이므로 적재를 생략한다.
           // 파일 없음·읽기 실패는 기존 동작(적재) 유지 — 가드 오류로 정당한 대응 요청이 막히지 않게 fail-open.
+          //   ★스캐너 공유(검토 지적 ①): 원문 정규식으로 세면 파견 분대장이 ```md 블록으로 되돌려 보낸
+          //   '인용 헤더'가 실제 대응으로 읽혀 정당한 대응 요청이 막힌다. Stop 훅과 같은 펜스 인식
+          //   스캐너를 쓴다(scripts/audit-response-scan.cjs 단일 출처).
           if (meta.commit) {
             try {
               const resp = fs.readFileSync(`${meta.auditDir}/대응이력.md`, 'utf8');
-              if (new RegExp(`^## 커밋 ${meta.commit}`, 'm').test(resp)) {
+              if (RESP_SCAN.respondedIds(resp).has(meta.commit)) {
                 console.log(`[${NAME}] 커밋 ${meta.commit} — 대응이력에 응답 존재, 대응 작업 재적재 생략`);
                 return;
               }
