@@ -20,12 +20,19 @@ function extractHashes(text, headerRe) {
   return set;
 }
 
-function verdictOf(text, hash) {
-  const idx = text.indexOf(`커밋 ${hash}`);
+// 그 커밋 감사 항목의 앞부분(첫 줄 판정이 들어 있는 구간)을 잘라 준다.
+//   ★마지막 매치를 쓴다 — 같은 커밋이 재감사·정정되면 항목이 여러 번 나오고, 최종본은 뒤에 있다.
+function chunkOf(text, hash) {
+  const marker = `## 커밋 ${hash} `;
+  const idx = text.lastIndexOf(marker);
   if (idx < 0) return '';
-  const chunk = text.slice(idx, idx + 400);
-  const m = chunk.match(/\[(정상|경미|주의|중대)\]/);
-  return m ? m[1] : '';
+  // 헤더 다음 줄부터가 판정 줄이다 — 헤더 자체를 포함해 넘기면 줄머리 앵커가 헤더에 걸리지 않는다.
+  const nl = text.indexOf('\n', idx);
+  return nl < 0 ? '' : text.slice(nl + 1, nl + 1 + 600);
+}
+
+function verdictOf(text, hash) {
+  return require('./audit-verdict.cjs').severityOf(chunkOf(text, hash)) || '';
 }
 
 try {
@@ -44,13 +51,13 @@ try {
   //   '인용 헤더'가 실제 대응으로 읽혀 미응답이 목록에서 사라진다(검토 지적 ①).
   const responded = require('./audit-response-scan.cjs').respondedIds(respText);
 
-  // ★판정 게이트(PO 지시 2026-07-25): 꼭 고쳐야 하는 것만 띄운다.
-  //   전엔 [정상]·[경미]까지 전부 주입돼, 세션마다 조치 불요 건에 일일이 입장을 쓰느라 낭비가 컸다.
-  //   [주의]/[중대]와 판정 불명만 남긴다 — 나머지는 감사이력 파일에 그대로 있고 필요할 때 읽으면 된다.
-  const ACTIONABLE = new Set(['주의', '중대']);
+  // ★판정 게이트: 꼭 고쳐야 하는 것만 띄운다. 기준은 심각도가 아니라 '조치 필요 여부'다
+  //   (PO 결정 2026-07-26) — 심각도와 고쳐야 하는지는 다른 축이고, [경미] 안에 진짜 결함이 섞인다.
+  //   해석은 audit-verdict.cjs 단일 출처(구 형식 감사는 심각도로 폴백, 불명이면 띄운다).
+  const VERDICT = require('./audit-verdict.cjs');
   const pending = [...audited]
     .filter((h) => !responded.has(h))
-    .filter((h) => { const v = verdictOf(auditText, h); return !v || ACTIONABLE.has(v); });
+    .filter((h) => VERDICT.needsAction(chunkOf(auditText, h)));
   if (!pending.length) process.exit(0);
 
   const lines = ['=== 미응답 감사 의견 있음 (pocket-commander _audit/, 자동 주입) ==='];

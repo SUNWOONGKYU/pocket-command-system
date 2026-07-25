@@ -12,6 +12,7 @@ const ENV_PATH = path.join(__dirname, '..', '.env.local');
 // 무결성 기록기는 pocket-commander 안에 있지만 감사관 cwd는 프로젝트마다 다르다 — 절대경로로 호출한다.
 const INTEGRITY_SCRIPT = path.join(__dirname, 'audit-integrity-check.js').replace(/\\/g, '/');
 const AUDIT_PATHS = require('./audit-paths.cjs'); // 감사 경로 규칙 단일 출처
+const AUDIT_VERDICT = require('./audit-verdict.cjs'); // 판정 규격·해석 단일 출처
 
 // 프로젝트별 설정(worker·auditor·criteria)은 공개본에 실데이터가 tracked되지 않도록 JSON으로 외부화했다.
 //   config/audit-projects.local.json(운영 실데이터, gitignore) 있으면 그걸, 없으면
@@ -127,7 +128,8 @@ ${cfg.criteria}
 - 헤더 형식(둘 중 하나, 그대로 사용): ${actor === 'daemon'
   ? `'## 커밋 ${short} 감사 — <시각> (${cfg.auditor})' — 워커 '${cfg.worker}'의 정상 자동 작업 커밋.`
   : `'## 커밋 ${short} 감사 — <시각> (${cfg.auditor}) [대화형 세션 전달 필요]' — 대화형 Claude Code 세션이 만든 커밋이라, 워커 '${cfg.worker}'가 아니라 그 대화형 세션이 확인·응답해야 함을 헤더에 명시하라. 대응 작업은 워커에게 자동 배정되지 않는다.`}
-- 감사 의견은 한국어로 간결하게: 첫 줄에 판정 [정상]/[경미]/[주의]/[중대], 이어서 기준별 근거·권고.
+- 감사 의견은 한국어로 간결하게. 첫 줄 규격은 아래를 지키고, 이어서 기준별 근거·권고를 쓴다.
+${AUDIT_VERDICT.VERDICT_INSTRUCTION}
 
 [감사 기록 무결성 — 반드시 이 순서로 수행. 작업자(${cfg.worker})는 아래 vault 경로에 절대 쓰지 않는다 — 너(${cfg.auditor})만 쓰는 감사관 전용 원본 보관소이며 작업자 저장소 밖에 있다]:
 1. 위에서 작성한 감사 의견 전체 텍스트(헤더 포함)를 '${vaultDir}/감사이력_원본.md' 끝에 그대로 append (구분선 '---' 한 줄을 항목 사이에 둔다). 이 파일이 "원본"이다. 폴더가 없으면 만들어라.

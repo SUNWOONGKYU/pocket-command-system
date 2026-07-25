@@ -24,6 +24,13 @@ const AUDIT_PATHS = require('../scripts/audit-paths.cjs') as {
 // 대응이력 헤더 스캐너도 단일 출처 — Stop 훅·SessionStart 주입과 같은 규칙(코드펜스 인용 제외)을 써야
 // 인용 헤더가 '이미 대응함'으로 읽혀 정당한 대응 요청이 막히는 일이 없다.
 const RESP_SCAN = require('../scripts/audit-response-scan.cjs') as { respondedIds(text: string): Set<string> };
+// 감사 판정 규격·해석도 단일 출처 — 프롬프트가 요구하는 형식과 게이트가 읽는 형식이 갈라지면
+// 조치가 필요한 지적이 조용히 묻힌다.
+const AUDIT_VERDICT = require('../scripts/audit-verdict.cjs') as {
+  severityOf(text: string): string | null;
+  needsAction(text: string): boolean;
+  VERDICT_INSTRUCTION: string;
+};
 
 // Node 20(<22)은 전역 WebSocket이 없어 supabase-js createClient가 throw한다 → ws로 폴리필.
 if (!(globalThis as any).WebSocket) (globalThis as any).WebSocket = ws as any;
@@ -699,7 +706,8 @@ async function enqueueDispatchAudit(self: Agent, task: { id: string; source_chat
 - 산출물 파일은 절대 수정하지 마라. 읽기·검토만.
 - 쓰기가 허용된 곳은 두 곳뿐이다: '${auditDir}'(작업자가 읽는 사본·대응 폴더)와 '${vaultDir}'(감사관 전용 원본 보관소, 저장소 밖).
 - 헤더 형식(그대로 사용): '## 커밋 ${tid} 감사 — <시각> (${auditorName})'
-- 첫 줄에 판정 [정상]/[경미]/[주의]/[중대], 이어서 기준별 근거·권고. 한국어로 간결하게.
+- 한국어로 간결하게. 첫 줄 규격은 아래를 지키고, 이어서 기준별 근거·권고를 쓴다.
+${AUDIT_VERDICT.VERDICT_INSTRUCTION}
 
 [감사 기록 무결성 — 반드시 이 순서로 수행. 작업자는 아래 vault 경로에 절대 쓰지 않는다 — 너(${auditorName})만 쓰는 감사관 전용 원본 보관소이며 작업자 저장소 밖에 있다]:
 1. 위에서 작성한 감사 의견 전체 텍스트(헤더 포함)를 '${vaultDir}/감사이력_원본.md' 끝에 그대로 append (구분선 '---' 한 줄을 항목 사이에 둔다). 이 파일이 "원본"이다. 폴더가 없으면 만들어라.
@@ -1237,19 +1245,13 @@ async function pickAndRun(self: Agent) {
     // (감사관은 자동 전용 — 이 대응 적재는 승인된 감사 지원 절차로 원 작업 소대의 legacy worker 큐에 연결한다.)
     if (r.ok && NAME && NAME.endsWith('감사관')) {
       const meta = parseAuditMeta(task.command_text);
-      // ★판정 게이트(PO 지시 2026-07-25): 꼭 고쳐야 하는 지적만 대응을 돌린다.
-      //   전엔 판정과 무관하게 감사 1건마다 대응 워커 1회가 돌았다 — [정상]/[경미]인데도 세션 하나를
-      //   통째로 써서 "수용, 조치 불요"를 받아내는 구조였다. 커밋 7건이 연쇄한 날 그 낭비가 그대로
-      //   7배가 됐다. [주의]/[중대]만 대응을 적재하고, 그 아래는 감사 기록만 남기고 넘어간다.
-      //   (사람이 봐야 할 [주의]/[중대]는 아래 텔레그램·SessionStart 주입 경로로 여전히 뜬다.)
-      //   판정은 '줄머리'에서만 읽는다(감사 9a536a04 ⓐ). 감사 의견은 앞선 커밋의 판정을 본문에서
-      //   인용하는 일이 잦아, 출력 전체의 첫 대괄호를 집으면 인용된 [정상]을 이번 판정으로 오독한다.
-      //   그 방향의 오독은 낭비가 아니라 '조치가 필요한 [주의]/[중대]를 조용히 묻는' 사고다.
-      //   감사관 프롬프트가 "첫 줄에 판정"을 규정하므로 줄머리 앵커로 좁혀도 정상 건을 놓치지 않는다.
-      const verdict = (r.output.match(/^\s*\[(정상|경미|주의|중대)\]/m) || [])[1] || null;
-      const needsResponse = verdict === '주의' || verdict === '중대' || verdict === null; // 판정 불명이면 안전하게 대응
-      if (meta && !needsResponse) {
-        console.log(`[${NAME}] 판정 [${verdict}] — 대응 불요, 감사 기록만 남기고 종료(${meta.commit || ''})`);
+      // ★판정 게이트: 꼭 고쳐야 하는 지적만 대응 워커를 돌린다.
+      //   전엔 판정과 무관하게 감사 1건마다 대응 워커 1회가 돌아, [정상]인데도 세션 하나를 통째로 써서
+      //   "수용, 조치 불요"를 받아냈다. 커밋이 연쇄한 날 그 낭비가 배수로 났다.
+      //   ★게이트 기준은 심각도가 아니라 '조치 필요 여부'다(PO 결정 2026-07-26) — 심각도와 고쳐야
+      //   하는지는 다른 축이고, 실제로 [경미] 안에 진짜 결함이 섞였다. 해석은 audit-verdict.cjs 단일 출처.
+      if (meta && !AUDIT_VERDICT.needsAction(r.output)) {
+        console.log(`[${NAME}] 조치불요(심각도 ${AUDIT_VERDICT.severityOf(r.output) || '불명'}) — 대응 생략, 감사 기록만 남기고 종료(${meta.commit || ''})`);
         return;
       }
       if (meta) {
