@@ -544,12 +544,16 @@ const VENDOR_LABEL: Record<string, string> = { codex: 'OpenAI Codex', grok: 'xAI
 // 그 방어를 약화시키는 대신 결정론적 코드가 대신 쓴다 — CLI에 새 권한이 열리지 않는 유일한 경로다.
 // 좌표는 respPrompt 말미의 [[RESPMETA ...]] 마커에서 읽는다(권한이 아니라 데이터).
 function recordDispatchResponse(cmdText: string, output: string) {
-  const m = cmdText.match(/\[\[RESPMETA ([^\]]+)\]\]/);
+  // 감사 의견 전문이 프롬프트에 인용되므로 의견 안에 이 마커가 '언급'돼 있을 수 있다(t-5c4b5515 실측:
+  // 감사관이 '[[RESPMETA …]]'라고 축약 인용 → 첫 매치가 빈 값이라 조용히 기록이 누락됐다).
+  // 러너가 붙이는 진짜 마커는 항상 맨 끝이므로 마지막 매치를 쓴다.
+  const m = [...cmdText.matchAll(/\[\[RESPMETA ([^\]]+)\]\]/g)].pop();
   if (!m) return;
   const meta: Record<string, string> = {};
   for (const kv of m[1].split('|')) { const i = kv.indexOf('='); if (i > 0) meta[kv.slice(0, i).trim()] = kv.slice(i + 1).trim(); }
   const { auditDir, commit, worker } = meta;
-  if (!auditDir || !commit || !/^[\w.-]+$/.test(commit)) return; // 식별자 형식 이상이면 기록하지 않음
+  // typeof 검사를 먼저 — undefined 를 정규식에 넣으면 문자열 'undefined'로 강제변환돼 통과해버린다.
+  if (typeof auditDir !== 'string' || typeof commit !== 'string' || !/^[\w.-]+$/.test(commit)) return;
   const file = path.join(auditDir, '대응이력.md');
   try {
     // 중복 가드 — 같은 식별자의 대응 헤더가 이미 있으면 다시 쓰지 않는다(감사→대응 재적재 가드와 동일 규약).
