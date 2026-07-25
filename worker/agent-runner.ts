@@ -538,6 +538,30 @@ function recentOutputFiles(root: string, sinceMs: number): string[] {
 
 const VENDOR_LABEL: Record<string, string> = { codex: 'OpenAI Codex', grok: 'xAI Grok', antigravity: 'Google Antigravity' };
 
+// 파견 분대장의 감사 대응을 러너가 대신 대응이력.md에 기록한다.
+// 샌드박스 워커는 자기 작업폴더 밖(프로젝트 _audit)에 쓰지 못하고, 커맨드 텍스트로 쓰기 승인을 주는
+// 길은 parseMercScope의 인용-주입 방어('[감사 대응]' 접두어면 토큰 무시, 감사 de1c229a)에 막혀 있다.
+// 그 방어를 약화시키는 대신 결정론적 코드가 대신 쓴다 — CLI에 새 권한이 열리지 않는 유일한 경로다.
+// 좌표는 respPrompt 말미의 [[RESPMETA ...]] 마커에서 읽는다(권한이 아니라 데이터).
+function recordDispatchResponse(cmdText: string, output: string) {
+  const m = cmdText.match(/\[\[RESPMETA ([^\]]+)\]\]/);
+  if (!m) return;
+  const meta: Record<string, string> = {};
+  for (const kv of m[1].split('|')) { const i = kv.indexOf('='); if (i > 0) meta[kv.slice(0, i).trim()] = kv.slice(i + 1).trim(); }
+  const { auditDir, commit, worker } = meta;
+  if (!auditDir || !commit || !/^[\w.-]+$/.test(commit)) return; // 식별자 형식 이상이면 기록하지 않음
+  const file = path.join(auditDir, '대응이력.md');
+  try {
+    // 중복 가드 — 같은 식별자의 대응 헤더가 이미 있으면 다시 쓰지 않는다(감사→대응 재적재 가드와 동일 규약).
+    if (fs.existsSync(file) && new RegExp('^## 커밋 ' + commit + ' 대응', 'm').test(fs.readFileSync(file, 'utf8'))) return;
+    fs.mkdirSync(auditDir, { recursive: true });
+    const ts = new Date().toLocaleString('sv-SE').slice(0, 16); // 로컬 'YYYY-MM-DD HH:MM'
+    const who = worker || NAME || '';
+    fs.appendFileSync(file, `\n## 커밋 ${commit} 대응 — ${ts} (${who}) [actor:daemon:${who}]\n${output.trim()}\n`);
+    console.log(`[${NAME}] 대응이력 기록(러너 대행) — ${commit}`);
+  } catch (e) { console.error(`[${NAME}] 대응이력 기록 실패(본류 무영향, 무시)`, e); }
+}
+
 // 감사관은 프로젝트당 한 명이다 — 벤더별로 감사관을 따로 두지 않는다. 파견 분대장의 산출물도
 // 그 프로젝트의 기존 감사관이 감사하고, 기록도 프로젝트 _audit 한 곳에 모인다(커밋 감사와 동일 폴더).
 // 감사관은 workdir 가 프로젝트 루트와 같고 이름이 '감사관' 으로 끝나는 agents 행으로 찾는다
@@ -1106,6 +1130,12 @@ async function pickAndRun(self: Agent) {
       await enqueueDispatchAudit(self, task, r.output, startedAt, dRoot);
     }
 
+    // ── 파견 분대장 감사 대응을 러너가 대신 기록 ─────────────
+    // 샌드박스 워커가 프로젝트 _audit에 직접 못 쓰기 때문(t-b47c6cad 실측: Access denied).
+    if (r.ok && !current.killed && task.command_text.trimStart().startsWith('[감사 대응]')) {
+      recordDispatchResponse(task.command_text, r.output);
+    }
+
     // ── 감사 → 대응 자동 루프 ──────────────────────────────────
     // 감사관이 감사를 마치면, 그 결과를 작업 워커에게 자동으로 보내 '대응'을 받는다.
     // (감사관은 자동 전용 — 이 대응 적재는 승인된 감사 지원 절차로 원 작업 소대의 legacy worker 큐에 연결한다.)
@@ -1135,16 +1165,18 @@ async function pickAndRun(self: Agent) {
           // 파견 산출물 감사(식별자 t-xxxxxxxx)는 '커밋'이 아니라 '작업'이다 — 문구만 구분하고,
           // 대응이력 헤더는 중복 가드(`^## 커밋 <id>`)와의 호환을 위해 두 경우 모두 '커밋 <id>'를 유지한다.
           const isMercAudit = (meta.commit || '').startsWith('t-');
-          // 파견 분대장은 샌드박스 워커라 자기 작업폴더 밖에 쓰지 못한다. 대응이력.md는 작업자 폴더
-          // (프로젝트 _audit)에 있으므로 그 경로에 한해 쓰기 승인 토큰을 붙인다. 없으면 대응이 기록되지
-          // 않고 결과 텍스트로만 남는다(t-aa2e6d2d 실측 — Codex CLI가 승인 토큰 없어 append 거부).
-          // 원본은 저장소 밖 vault에 있어 이 승인으로도 손대지 못한다.
-          const grant = isMercAudit && meta.auditDir ? `\n[용병경로=${meta.auditDir}]` : '';
+          // 파견 분대장은 샌드박스 워커라 자기 작업폴더 밖(대응이력.md가 있는 프로젝트 _audit)에 쓰지
+          // 못한다. 커맨드 텍스트로 승인 토큰을 주는 방법은 쓸 수 없다 — parseMercScope가 '[감사 대응]'
+          // 접두어면 토큰을 전부 무시하기 때문이다(인용-주입 방어, 감사 de1c229a). 그 방어를 약화시키는
+          // 대신 러너가 대응 완료 후 직접 append 한다(recordDispatchResponse). 아래 마커는 그때 쓸
+          // 좌표이며, 권한이 아니라 데이터다 — CLI에 새 권한을 열어주지 않는다.
+          const respMeta = isMercAudit && meta.auditDir
+            ? `\n[[RESPMETA auditDir=${meta.auditDir}|commit=${meta.commit || ''}|worker=${meta.worker || ''}]]` : '';
           const respPrompt =
 `[감사 대응] '${NAME}'이(가) 너의 ${isMercAudit ? '작업' : '커밋'}(${meta.commit || ''})을 감사했다. 아래 감사 의견을 읽고 입장을 한국어로 밝혀라(수용/부분수용/반론 + 조치계획). 그 대응을 '${meta.auditDir}/대응이력.md' 에 append 하라. 헤더는 '## 커밋 ${meta.commit || ''} 대응 [<모드>] — <YYYY-MM-DD HH:MM> (${meta.worker})' 형식으로 쓴다. <모드>는 대응한 주체다 — 네 시스템 프롬프트에 '[실행모드=데몬]'이 있으면 '데몬'(자동 백그라운드 워커), 없으면 '소대장'(사람이 붙은 인터랙티브 세션)으로 적는다. 시각은 실제 시각으로 채운다. ${isMercAudit ? '산출물 수정이 필요하면 수정해도 된다(다음 완료 시 다시 자동 감사된다).' : '코드 수정이 필요하면 정상 작업으로 진행해도 된다(새 커밋은 다시 자동 감사된다).'}
 
 [감사 의견]
-${r.output}${grant}`;
+${r.output}${respMeta}`;
           try {
             const legacyResp = { command_text: respPrompt, assigned_agent: meta.worker, status: 'queued', source_chat_id: task.source_chat_id };
             const ins = await sb.from('tasks').insert({ ...legacyResp, ordered_by: 'audit_loop', task_type: 'audit_response_requested', parent_task_id: task.id });
