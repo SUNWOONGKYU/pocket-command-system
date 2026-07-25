@@ -480,6 +480,74 @@ function appendMercHistory(a: Agent, cmdText: string, ok: boolean, output: strin
   } catch { /* 이력은 부가 정보 — 실패 무시 */ }
 }
 
+// ── 용병 산출물 자동 감사 (PO 지시 2026-07-17: 용병에게도 같은 벤더 AI를 감사관으로) ──────
+// 용병은 커밋을 만들지 않아 post-commit 감사 파이프라인(enqueue-audit.js) 밖에 있다.
+// → 태스크 완료 시점에 '<용병명> 감사관'(kind = 같은 벤더 CLI)이 agents에 등록돼 있으면
+//   산출물 감사 태스크를 적재한다. 감사관의 workdir는 용병 작업폴더와 동일(산출물을 직접 읽고
+//   _audit/에 기록). 이후 감사→대응 자동 루프는 커밋 기반과 동일한 AUDITMETA 경로를 그대로 탄다.
+// 무한루프 가드(커밋 파이프라인의 '_audit는 커밋 안 됨'과 동일 역할):
+//   ① 감사관 자신의 완료는 적재하지 않음(NAME '감사관' 접미) ② '[감사 대응]' 태스크 완료는 적재하지
+//   않음(대응→재감사 차단) ③ AUDITMETA 보유 태스크(감사 태스크 자체)는 적재하지 않음.
+// 커밋 해시 대신 태스크 id 앞 8자를 't-xxxxxxxx' 식별자로 써서 기존 중복 대응 가드('## 커밋 <id>'
+// 헤더 존재 검사)·대응이력 헤더 관행이 무변경으로 재사용된다.
+function recentMercFiles(root: string, sinceMs: number): string[] {
+  // 이번 태스크 실행 중 변경된 산출물 후보(mtime 기준) — 감사관에게 검토 대상 힌트로 전달.
+  // _audit/·_작업이력.md·숨김 폴더는 제외(감사 부산물·이력·샌드박스 잡음). best-effort.
+  const out: string[] = [];
+  const walk = (dir: string, depth: number) => {
+    if (depth > 3 || out.length >= 20) return;
+    let entries: fs.Dirent[] = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (out.length >= 20) return;
+      if (e.name.startsWith('.') || e.name === '_audit' || e.name === '_작업이력.md') continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p, depth + 1);
+      else { try { if (fs.statSync(p).mtimeMs >= sinceMs) out.push(path.relative(root, p).replace(/\\/g, '/')); } catch { /* 파일 소멸 등 — 무시 */ } }
+    }
+  };
+  walk(root, 0);
+  return out;
+}
+
+const MERC_VENDOR: Record<string, string> = { codex: 'OpenAI Codex', gemini: 'Google Gemini', grok: 'xAI Grok', antigravity: 'Google Antigravity' };
+
+async function enqueueMercAudit(self: Agent, task: { id: string; source_chat_id: string | null; command_text: string }, output: string, startedAt: number) {
+  const auditorName = `${self.name} 감사관`;
+  try {
+    const { data: auditor } = await sb.from('agents').select('name').eq('name', auditorName).maybeSingle();
+    if (!auditor || !self.workdir) return; // 감사관 미등록 용병은 종전대로 감사 없음
+    const auditDir = path.join(self.workdir, '_audit').replace(/\\/g, '/');
+    try { fs.mkdirSync(auditDir, { recursive: true }); } catch { /* 감사관 실행 시 재시도됨 */ }
+    const tid = 't-' + String(task.id).replace(/-/g, '').slice(0, 8);
+    const one = (s: string, n: number) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
+    const changed = recentMercFiles(self.workdir, startedAt);
+    // grok 감사관은 프롬프트가 argv 단일 라인(약 8K 한계)으로 전달되므로 요약 상한을 짧게 유지한다.
+    const prompt =
+`[산출물 감사 — 산출물 읽기전용] 워커 '${self.name}'(${MERC_VENDOR[self.kind] || self.kind})이 방금 작업 1건을 완료했다. 현재 작업 디렉터리가 그 워커의 작업폴더다.
+
+[지시문(요약)] ${one(task.command_text, 1000)}
+[결과 보고(요약)] ${one(output, 1500)}
+[이번 작업에서 변경된 파일] ${changed.length ? changed.join(', ') : '탐지 없음 — 결과 보고에 언급된 파일을 직접 확인'}
+
+너는 '${auditorName}'이다. 위 작업 산출물을 감사하라. 5기준:
+① 정확성 — 산출물이 지시를 실제로 충족하는가. 가짜/샘플 데이터·항상 실패하는 분기가 실동작처럼 표현되지 않았는가.
+② 보고 정직성 — 결과 보고가 실제 산출물과 일치하는가(과장·누락).
+③ 시크릿·PII — 산출물/보고에 키·토큰·개인정보 노출이 없는가.
+④ 범위 — 작업폴더 밖 수정 흔적·실거래(매매·주문) 관련 접근이 없는가.
+⑤ 안전 — 위험 명령·외부 전송·사용자 오인 유발 요소가 없는가.
+
+규칙:
+- 산출물 파일은 절대 수정하지 마라. 읽기·검토만.
+- 단 '_audit' 폴더에는 쓰기 허용. 감사 의견을 '_audit/감사이력.md'에 append 하라.
+- 헤더 형식(그대로 사용): '## 커밋 ${tid} 감사 — <시각> (${auditorName})'
+- 첫 줄에 판정 [정상]/[경미]/[주의]/[중대], 이어서 기준별 근거·권고. 한국어로 간결하게.
+[[AUDITMETA project=merc:${self.name}|worker=${self.name}|auditDir=${auditDir}|commit=${tid}|host=${HOST}|actor=daemon]]`;
+    await sb.from('tasks').insert({ command_text: prompt, assigned_agent: auditorName, status: 'queued', source_chat_id: task.source_chat_id });
+    console.log(`[${NAME}] → '${auditorName}'에게 산출물 감사 작업 자동 적재(${tid})`);
+  } catch (e) { console.error(`[${NAME}] 용병 감사 적재 실패(본류 무영향, 무시)`, e); }
+}
+
 // 감사(1df393f5) 경미-2 조치: claude_code가 childEnv에서 ANTHROPIC 키를 delete하는 것과 달리
 // codex/grok은 process.env 전체를 그대로 물려받아 SUPABASE_SERVICE_ROLE_KEY·TELEGRAM_BOT_TOKEN 등이
 // 신뢰 범위 밖 벤더 CLI 프로세스에 노출됐다. 그 CLI들은 DB/텔레그램에 접근할 이유가 없으므로 스트립.
@@ -939,6 +1007,7 @@ async function pickAndRun(self: Agent) {
     }
 
     const adapter = ADAPTERS[self.kind] || runClaudeApi;
+    const startedAt = Date.now(); // 용병 산출물 감사의 변경 파일 탐지 기준점(enqueueMercAudit)
     let r = await adapter(commandText, self);
     if (current.killed) r = { ok: false, output: '⛔ 사용자 중단' };
 
@@ -980,6 +1049,13 @@ async function pickAndRun(self: Agent) {
     await telegram(task.source_chat_id, `${icon} <b>${escHtml(NAME!)}</b> ${verb}\n${mdToTelegram(r.output)}`);
     console.log(`[${NAME}] ${icon} ${verb}`);
 
+    // ── 용병 산출물 자동 감사 적재 (PO 지시 2026-07-17) ─────────────
+    // 성공 완료한 용병 본작업만 대상. 루프 가드: 감사관 자신·[감사 대응]·감사 태스크(AUDITMETA)는 제외.
+    if (r.ok && !current.killed && MERC_KINDS.has(self.kind) && NAME && !NAME.endsWith('감사관')
+        && !task.command_text.trimStart().startsWith('[감사 대응]') && !parseAuditMeta(task.command_text)) {
+      await enqueueMercAudit(self, task, r.output, startedAt);
+    }
+
     // ── 감사 → 대응 자동 루프 ──────────────────────────────────
     // 감사관이 감사를 마치면, 그 결과를 작업 워커에게 자동으로 보내 '대응'을 받는다.
     // (감사관은 자동 전용 — 이 대응 적재는 승인된 감사 지원 절차로 원 작업 소대의 legacy worker 큐에 연결한다.)
@@ -1006,8 +1082,11 @@ async function pickAndRun(self: Agent) {
               }
             } catch { /* 대응이력 없음/읽기 실패 — 첫 대응일 수 있으니 적재 진행 */ }
           }
+          // 용병 산출물 감사(식별자 t-xxxxxxxx)는 '커밋'이 아니라 '작업'이다 — 문구만 구분하고,
+          // 대응이력 헤더는 중복 가드(`^## 커밋 <id>`)와의 호환을 위해 두 경우 모두 '커밋 <id>'를 유지한다.
+          const isMercAudit = (meta.commit || '').startsWith('t-');
           const respPrompt =
-`[감사 대응] '${NAME}'이(가) 너의 커밋(${meta.commit || ''})을 감사했다. 아래 감사 의견을 읽고 입장을 한국어로 밝혀라(수용/부분수용/반론 + 조치계획). 그 대응을 '${meta.auditDir}/대응이력.md' 에 append 하라. 헤더는 '## 커밋 ${meta.commit || ''} 대응 [<모드>] — <YYYY-MM-DD HH:MM> (${meta.worker})' 형식으로 쓴다. <모드>는 대응한 주체다 — 네 시스템 프롬프트에 '[실행모드=데몬]'이 있으면 '데몬'(자동 백그라운드 워커), 없으면 '소대장'(사람이 붙은 인터랙티브 세션)으로 적는다. 시각은 실제 시각으로 채운다. 코드 수정이 필요하면 정상 작업으로 진행해도 된다(새 커밋은 다시 자동 감사된다).
+`[감사 대응] '${NAME}'이(가) 너의 ${isMercAudit ? '작업' : '커밋'}(${meta.commit || ''})을 감사했다. 아래 감사 의견을 읽고 입장을 한국어로 밝혀라(수용/부분수용/반론 + 조치계획). 그 대응을 '${meta.auditDir}/대응이력.md' 에 append 하라. 헤더는 '## 커밋 ${meta.commit || ''} 대응 [<모드>] — <YYYY-MM-DD HH:MM> (${meta.worker})' 형식으로 쓴다. <모드>는 대응한 주체다 — 네 시스템 프롬프트에 '[실행모드=데몬]'이 있으면 '데몬'(자동 백그라운드 워커), 없으면 '소대장'(사람이 붙은 인터랙티브 세션)으로 적는다. 시각은 실제 시각으로 채운다. ${isMercAudit ? '산출물 수정이 필요하면 수정해도 된다(다음 완료 시 다시 자동 감사된다).' : '코드 수정이 필요하면 정상 작업으로 진행해도 된다(새 커밋은 다시 자동 감사된다).'}
 
 [감사 의견]
 ${r.output}`;
