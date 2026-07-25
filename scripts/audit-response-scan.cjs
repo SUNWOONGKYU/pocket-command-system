@@ -47,9 +47,13 @@ function scanSafe(lines, onFallback) {
 }
 
 // 텍스트에서 '대응이 존재하는 식별자' 집합 — 재적재 가드·미응답 판정 공용.
-function respondedIds(text) {
+function respondedIds(text, onFallback) {
   const lines = String(text).split('\n');
-  const { indices } = scanSafe(lines);
+  // 폴백이 발동했다는 사실은 어느 소비처에서든 남겨야 파일 이상(펜스 미닫힘)이 늦게 발견되지 않는다
+  //   (감사 9a536a04 ⓑ). 호출자가 콜백을 안 주면 기본 경고를 쓴다.
+  const { indices } = scanSafe(lines, onFallback || (() => {
+    console.error('[audit-response-scan] 대응이력.md 의 코드펜스가 닫히지 않았다 — 펜스 비인식으로 폴백(인용 헤더가 섞일 수 있음). 파일의 펜스 균형을 점검하라.');
+  }));
   const ids = new Set();
   for (const i of indices) {
     const m = lines[i].match(/^## 커밋 ((?:t-)?[0-9a-f]{6,40})\b/);
