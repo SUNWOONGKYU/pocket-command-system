@@ -149,7 +149,9 @@ export default function Cockpit() {
   const [platoons, setPlatoons] = useState<Platoon[]>([]); // 소대 정본 — 소대장 모드(세션/데몬) 표시용
   const [hosts, setHosts] = useState<Host[]>([]); // PC/중대 물리 그룹 — 프로젝트 카드를 PC별로 묶어 보여주는 데 사용
   const [collapsedHosts, setCollapsedHosts] = useState<Set<string>>(new Set()); // 접힌 PC 그룹(호스트 키) — 기본 펼침
-  const [events, setEvents] = useState<EventLog[]>([]); // 인박스(충돌 경고)용 — 최근 50건만(RLS 공개 조회)
+  const [events, setEvents] = useState<EventLog[]>([]); // 인박스 공용 — 최근 50건(RLS 공개 조회)
+  // 충돌 경고 전용 — 위 공유 풀(limit 50)에 섞이면 빈도 높은 이벤트에 밀려 사라진다(PO 결정 2026-07-26).
+  const [conflictEvents, setConflictEvents] = useState<EventLog[]>([]);
   const [inboxOpen, setInboxOpen] = useState(false); // 헤더 🔔 → 인박스 패널 펼침
   // 예외함 'failed 24h' 전용 쿼리 결과 — 일반 tasks(limit 120, updated_at desc)에 얹으면 24h 내 갱신량이
   //   120건을 넘을 때 오래된 failed 건이 배열 밖으로 밀려 조용히 누락된다(V① 반려 결함). 그래서 별도 쿼리로 분리.
@@ -226,7 +228,7 @@ export default function Cockpit() {
     const sb = createBrowserClient();
     if (!sb) { setLive(false); return; } // 콕핏은 라이브 전용 (데모 시드 없음) — 미설정 시 안내 배너로 알림
     const load = async () => {
-      const [{ data: a }, { data: tk }, { data: pl }, { data: h }, { data: ev }, { data: ft }] = await Promise.all([
+      const [{ data: a }, { data: tk }, { data: pl }, { data: h }, { data: ev }, { data: ft }, { data: cf }] = await Promise.all([
         sb.from('agents').select('*'),
         sb.from('tasks').select('*').order('updated_at', { ascending: false }).limit(120),
         sb.from('platoons').select('*'), // 미적용 DB(마이그레이션 전)면 data=null — 배지만 안 뜨고 나머지 무영향
@@ -236,6 +238,12 @@ export default function Cockpit() {
         sb.from('tasks').select('*').eq('status', 'failed')
           .gte('updated_at', new Date(Date.now() - 86400000).toISOString())
           .order('updated_at', { ascending: false }).limit(200),
+        // 인박스 충돌 경고 전용 — 위 events(limit 50, 전 타입 공유)와 별개로 직접 조회한다(PO 결정 2026-07-26).
+        //   충돌 경고는 시간 제한이 없는 실조치 항목이라 사람이 손대야 풀린다. 공유 풀에만 의존하면
+        //   감사 대응처럼 빈도 높은 이벤트가 쏟아질 때 50건 밖으로 밀려 인박스에서 조용히 사라진다.
+        //   예외함 'failed 24h'를 전용 쿼리로 분리한 것과 같은 처방(같은 계열 결함을 이미 한 번 겪었다).
+        sb.from('events').select('*').eq('event_type', 'merge_conflict')
+          .order('created_at', { ascending: false }).limit(200),
       ]);
       if (a) setAgents(a as Agent[]);
       if (tk) setTasks(tk as Task[]);
@@ -243,6 +251,7 @@ export default function Cockpit() {
       if (h) setHosts(h as Host[]);
       if (ev) setEvents(ev as EventLog[]);
       if (ft) setFailedTasks24h(ft as Task[]);
+      if (cf) setConflictEvents(cf as EventLog[]);
     };
     load();
     const poll = setInterval(load, 15000);
@@ -501,8 +510,14 @@ export default function Cockpit() {
     .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
   // 충돌 경고 — 계약: event_type='merge_conflict', payload.resolved !== true. payload 형식은 schema.sql 주석 참조.
-  const conflictItems: InboxItem[] = events
-    .filter((e) => e.event_type === 'merge_conflict' && (e.payload as Record<string, unknown> | null)?.resolved !== true)
+  //   ★소스는 전용 쿼리(conflictEvents) — 공유 events 풀에 의존하면 밀려나 사라진다.
+  //     realtime 구독으로 들어온 신규분이 공유 풀에만 있을 수 있어 둘을 합치고 id 로 중복을 제거한다.
+  const conflictSource: EventLog[] = [
+    ...conflictEvents,
+    ...events.filter((e) => e.event_type === 'merge_conflict' && !conflictEvents.some((c) => c.id === e.id)),
+  ];
+  const conflictItems: InboxItem[] = conflictSource
+    .filter((e) => (e.payload as Record<string, unknown> | null)?.resolved !== true)
     .map((e) => {
       const payload = (e.payload || {}) as { repo?: string; worker?: string; branch?: string; base?: string };
       const proj = PROJECTS.find((p) => p.worker === payload.worker);
