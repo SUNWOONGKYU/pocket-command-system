@@ -434,7 +434,7 @@ export default function Cockpit() {
   // 예외함 ① 최근 24h 내 실패 태스크 — 전용 쿼리(failedTasks24h) 사용.
   //   일반 tasks(limit 120, updated_at desc)에 의존하면 24h 내 갱신량이 120건을 넘길 때 오래된 failed 건이
   //   배열 밖으로 밀려 조용히 누락된다(V① 반려 결함). id로 중복 제거(전용 쿼리가 정본, 못 미더우면 tasks에서 보강).
-  type InboxItem = { id: string; kind: 'failed_task' | 'stuck_agent' | 'audit_flag' | 'approval' | 'conflict'; label: string; detail: string; time: string; projectId?: string; agentName?: string };
+  type InboxItem = { id: string; kind: 'failed_task' | 'stuck_agent' | 'audit_flag' | 'approval' | 'conflict' | 'audit_response'; label: string; detail: string; time: string; projectId?: string; agentName?: string };
   const failedIds = new Set(failedTasks24h.map((t) => t.id));
   const failedSource = [
     ...failedTasks24h,
@@ -515,7 +515,24 @@ export default function Cockpit() {
     })
     .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
-  const inboxCount = exceptionItems.length + approvalItems.length + conflictItems.length;
+  // 감사 대응 — 계약: event_type='audit_response'(Stop 훅 response-actor-stamp가 대화형 대응 시 적재).
+  //   대화형 세션의 감사 대응은 파일(_audit/대응이력.md)에만 남아 대시보드에 안 떴다 → 이 이벤트로 능동 표시.
+  const auditResponseItems: InboxItem[] = events
+    .filter((e) => e.event_type === 'audit_response')
+    .map((e) => {
+      const payload = (e.payload || {}) as { repo?: string; commit?: string; body?: string };
+      const proj = PROJECTS.find((p) => p.git && p.git.replace(/\\/g, '/').endsWith('/' + (payload.repo || '\0')));
+      return {
+        id: 'ar-' + e.id, kind: 'audit_response',
+        label: (proj?.label || payload.repo || '감사 대응') + (payload.commit ? ` · ${payload.commit}` : ''),
+        detail: (payload.body || '대화형 세션 감사 대응').slice(0, 80),
+        time: e.created_at, projectId: proj?.id,
+      } as InboxItem;
+    })
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+    .slice(0, 20);
+
+  const inboxCount = exceptionItems.length + approvalItems.length + conflictItems.length + auditResponseItems.length;
 
   // ── 함대 상태 집계 — 헤더 스트립용 (전 에이전트를 파생상태로 분류) ──
   const fleet = (() => {
@@ -683,6 +700,23 @@ export default function Cockpit() {
               {conflictItems.length === 0
                 ? <div className={s.inboxEmpty}>충돌 없음</div>
                 : conflictItems.map((it) => (
+                  <button
+                    key={it.id} className={s.inboxItem}
+                    onClick={() => { if (it.projectId) { setSel(it.projectId); setSelAgent(null); } setInboxOpen(false); }}
+                  >
+                    <span className={s.inboxItemLabel}>{it.label}</span>
+                    <span className={s.inboxItemDetail}>{it.detail}</span>
+                    <span className={s.inboxItemTime}>{relTime(it.time, now)}</span>
+                  </button>
+                ))}
+            </details>
+            <details className={s.inboxSection} open>
+              <summary className={s.inboxSectionHead}>
+                📝 감사 대응 <span className={s.inboxCount}>{auditResponseItems.length}</span>
+              </summary>
+              {auditResponseItems.length === 0
+                ? <div className={s.inboxEmpty}>대화형 감사 대응 없음</div>
+                : auditResponseItems.map((it) => (
                   <button
                     key={it.id} className={s.inboxItem}
                     onClick={() => { if (it.projectId) { setSel(it.projectId); setSelAgent(null); } setInboxOpen(false); }}
