@@ -630,19 +630,19 @@ async function enqueueDispatchAudit(self: Agent, task: { id: string; source_chat
     try { fs.mkdirSync(auditDir, { recursive: true }); } catch { /* 감사관 실행 시 재시도됨 */ }
     const tid = 't-' + String(task.id).replace(/-/g, '').slice(0, 8);
     const one = (s: string, n: number) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
-    // 감사 대상 폴더 — 파견 실작업은 self.workdir 이 아니라 <root>/<kind>-worktree 에서 이뤄지고
-    //   검증보고서는 <kind>-artifacts 에 남는다(3계층 스킬 §4.5). 전에는 항상 self.workdir 을 봐서
-    //   감사관이 빈 폴더를 보고 '변경 없음 → 내용 없는 정상' 판정을 내릴 수 있었다(감사 c839d4d9 ⓐ).
-    //   dispatchRoot(=root)가 두 폴더의 존재를 이미 확인하고 반환된 값이므로 그대로 감사 대상으로 쓴다.
-    //   폴더가 사라진 경우엔 종전 동작(self.workdir)으로 폴백한다.
-    const pairDirs = [path.join(root, `${self.kind}-worktree`), path.join(root, `${self.kind}-artifacts`)]
+    // 감사 대상 폴더 — 파견 실작업이 어디서 이뤄지는지는 운용에 따라 갈린다.
+    //   ① PO가 [용병경로] 승인을 주면 어댑터 cwd 가 <root>/<kind>-worktree 가 되고 검증보고서는
+    //      <kind>-artifacts 에 남는다(3계층 스킬 §4.5).
+    //   ② 승인 토큰이 없으면 cwd 는 self.workdir(_agentwork/<name>) 그대로다 — 최근 파견 작업 대부분.
+    //   전엔 ①을 못 봤고(감사 c839d4d9 ⓐ), 그걸 고치며 ②로 '교체'했더니 이번엔 ②를 못 보게 됐다
+    //   (감사 a43e0e6c ⓐ — 사각이 반대편으로 옮겨갔을 뿐). 그래서 교체가 아니라 합집합으로 본다.
+    //   상대경로 기준(relBase)은 공통 상위인 root — self.workdir 은 dispatchRoot 가 위로 올라가며
+    //   찾은 결과이므로 항상 root 하위다. 따라서 '_agentwork/codex-cli/...' 와 'codex-worktree/...' 가
+    //   경로만 봐도 구분된다. 스캔 예산·제외 목록이 있으므로 대상을 넓혀도 순회 비용은 묶여 있다.
+    const scanDirs = [self.workdir, path.join(root, `${self.kind}-worktree`), path.join(root, `${self.kind}-artifacts`)]
       .filter((d) => { try { return fs.statSync(d).isDirectory(); } catch { return false; } });
-    const scanDirs = pairDirs.length ? pairDirs : [self.workdir];
-    const targetBase = pairDirs.length ? root : self.workdir;
-    const targetLabel = pairDirs.length
-      ? `${AUDIT_PATHS.posix(root)}  (하위 ${pairDirs.map((d) => path.basename(d)).join(' · ')})`
-      : AUDIT_PATHS.posix(self.workdir);
-    const changed = recentOutputFiles(scanDirs, targetBase, startedAt);
+    const targetLabel = `${AUDIT_PATHS.posix(root)}  (감사 대상: ${scanDirs.map((d) => AUDIT_PATHS.posix(path.relative(root, d)) || '.').join(' · ')})`;
+    const changed = recentOutputFiles(scanDirs.length ? scanDirs : [self.workdir], root, startedAt);
     // grok 감사관은 프롬프트가 argv 단일 라인(약 8K 한계)으로 전달되므로 요약 상한을 짧게 유지한다.
     const prompt =
 `[산출물 감사 — 산출물 읽기전용] 파견 분대장 '${self.name}'(${VENDOR_LABEL[self.kind] || self.kind})이 방금 작업 1건을 완료했다.

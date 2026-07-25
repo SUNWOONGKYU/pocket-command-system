@@ -116,8 +116,20 @@ try {
 
   const text = fs.readFileSync(respFile, 'utf8');
   const lines = text.split('\n'); // CRLF는 각 줄 끝 '\r'로 보존됨 — join('\n')으로 원본 EOL 그대로 복원.
+  // 코드펜스(``` … ```) 안의 헤더는 '인용'이지 실제 대응 항목이 아니다.
+  //   파견 분대장이 샌드박스 때문에 직접 append 하지 못하면 "이렇게 기록할 것이다"라며 대응문을
+  //   ```md 블록으로 되돌려 보내고, 러너가 그 본문을 그대로 append 한다. 그러면 인용된 헤더 줄이
+  //   파일에 남아 이 훅이 실제 대응으로 오인하고 스탬프 + DB events + 텔레그램까지 발화했다
+  //   (실측: t-f11a00a0·t-503fa463·t-659ac674 각 1건씩 유령 대응이 생성됨).
+  //   파견 대응 프롬프트에서 헤더 작성을 금지했지만, 다른 벤더·다른 문구로 재발할 수 있으므로
+  //   파싱 단계에서도 막는다. 펜스는 ``` 또는 ~~~ 로 시작하는 줄로 토글한다.
   const headerIdx = [];
-  for (let i = 0; i < lines.length; i++) if (HEADER_RE.test(lines[i])) headerIdx.push(i);
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].replace(/\r$/, '').trimStart();
+    if (t.startsWith('```') || t.startsWith('~~~')) { inFence = !inFence; continue; }
+    if (!inFence && HEADER_RE.test(lines[i])) headerIdx.push(i);
+  }
   const currentCount = headerIdx.length;
 
   // 첫 실행: 기존 이력을 baseline으로 기록만 하고 스탬프하지 않는다(과거 주체 오표식 방지).
@@ -125,6 +137,12 @@ try {
     fs.writeFileSync(statePath, JSON.stringify({ stampedThrough: currentCount, mtimeMs }));
     return;
   }
+
+  // 파싱 규칙이 바뀌어(코드펜스 제외 도입) 헤더 총수가 줄면, 저장된 stampedThrough 가 현재 총수보다
+  //   커진다. 그대로 두면 그 차이만큼 새 대응이 루프에 들어오지 못해 조용히 스탬프·통지가 누락된다.
+  //   현재 총수로 내려 맞춘다 — 이미 스탬프된 줄은 아래 '[actor:' 멱등 검사에서 건너뛰므로
+  //   재스탬프·재통지는 일어나지 않는다.
+  if (state.stampedThrough > currentCount) state.stampedThrough = currentCount;
 
   const actor = (process.env.PCSS_ACTOR || '').trim();
   const isLeader = !actor; // PCSS_ACTOR 없음 = 대화형(leader) 세션
