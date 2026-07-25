@@ -773,16 +773,21 @@ async function telegram(chatId: number | null, text: string) {
     while (rest.startsWith(NL)) rest = rest.slice(1);
   }
   if (rest.length) chunks.push(rest);
+  // HTML 태그 제거 + 엔티티 복원 → 평문. mdToTelegram이 만든 HTML이 텔레그램 파서에 거부(400)될 때 폴백용.
+  const toPlain = (s: string) => s.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
   for (let k = 0; k < chunks.length; k++) {
     const body = chunks.length > 1 ? `${chunks[k]}${NL}<i>(${k + 1}/${chunks.length})</i>` : chunks[k];
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      // 버튼은 마지막 조각에만 — 여러 통으로 쪼개져도 바로가기는 한 번만 붙인다.
-      body: JSON.stringify({
-        chat_id: chatId, text: body, parse_mode: 'HTML',
-        ...(cockpitBtn && k === chunks.length - 1 ? { reply_markup: cockpitBtn } : {}),
-      }),
-    }).catch(() => {});
+    const markup = cockpitBtn && k === chunks.length - 1 ? { reply_markup: cockpitBtn } : {};
+    const send = (payload: object) => fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    // ★ 응답을 확인한다 — 종전엔 .catch()만 있어 HTML 파싱 실패(400 "can't parse entities")가 조용히 유실됐다.
+    //   감사 의견처럼 코드·꺾쇠(<...>)가 섞인 본문이 mdToTelegram 엣지케이스로 깨진 HTML을 만들면 이 경로에 걸린다.
+    //   → 400 등 실패 시 parse_mode 없이 평문으로 재전송해 알림이 절대 조용히 사라지지 않게 한다.
+    const res = await send({ chat_id: chatId, text: body, parse_mode: 'HTML', ...markup }).catch(() => null);
+    if (!res || !res.ok) {
+      await send({ chat_id: chatId, text: toPlain(body), ...markup }).catch(() => {});
+    }
   }
 }
 
