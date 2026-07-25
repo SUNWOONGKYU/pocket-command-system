@@ -543,7 +543,8 @@ const VENDOR_LABEL: Record<string, string> = { codex: 'OpenAI Codex', grok: 'xAI
 // 길은 parseMercScope의 인용-주입 방어('[감사 대응]' 접두어면 토큰 무시, 감사 de1c229a)에 막혀 있다.
 // 그 방어를 약화시키는 대신 결정론적 코드가 대신 쓴다 — CLI에 새 권한이 열리지 않는 유일한 경로다.
 // 좌표는 respPrompt 말미의 [[RESPMETA ...]] 마커에서 읽는다(권한이 아니라 데이터).
-function recordDispatchResponse(cmdText: string, output: string) {
+// expectedAuditDir 는 러너가 스스로 계산한 대응이력 폴더다 — 마커 값은 이것과 일치할 때만 쓴다(아래 참고).
+function recordDispatchResponse(cmdText: string, output: string, expectedAuditDir: string) {
   // 감사 의견 전문이 프롬프트에 인용되므로 의견 안에 이 마커가 '언급'돼 있을 수 있다(t-5c4b5515 실측:
   // 감사관이 '[[RESPMETA …]]'라고 축약 인용 → 첫 매치가 빈 값이라 조용히 기록이 누락됐다).
   // 러너가 붙이는 진짜 마커는 항상 맨 끝이므로 마지막 매치를 쓴다.
@@ -554,6 +555,17 @@ function recordDispatchResponse(cmdText: string, output: string) {
   const { auditDir, commit, worker } = meta;
   // typeof 검사를 먼저 — undefined 를 정규식에 넣으면 문자열 'undefined'로 강제변환돼 통과해버린다.
   if (typeof auditDir !== 'string' || typeof commit !== 'string' || !/^[\w.-]+$/.test(commit)) return;
+  // 파견 산출물 감사(식별자 t- 접두)에서만 대행 기록한다(감사 c7af735d 권고 ⓑ).
+  //   커밋 감사 대응 프롬프트에는 러너가 붙이는 진짜 마커가 아예 없다(respMeta 빈 문자열). 그때 감사
+  //   의견 본문에 완전형 마커가 인용돼 있으면 그것이 유일·마지막 매치가 되어 진짜 좌표로 오인된다.
+  if (!commit.startsWith('t-')) return;
+  // 좌표를 값 그대로 신뢰하지 않는다(감사 c7af735d 권고 ⓐ). 러너가 스스로 계산한 경로와 일치할 때만
+  //   쓴다 — 마커가 오염돼 임의 절대경로를 지목해도 러너(샌드박스 밖 node)가 거기에 쓰지 않는다.
+  //   enqueueDispatchAudit 이 auditDir 을 <dispatchRoot>/_audit 로 만들므로 호출부가 같은 값을 넘긴다.
+  if (path.resolve(auditDir) !== path.resolve(expectedAuditDir)) {
+    console.error(`[${NAME}] 대응이력 기록 거부 — 마커 좌표(${auditDir})가 러너 계산 경로(${expectedAuditDir})와 불일치`);
+    return;
+  }
   const file = path.join(auditDir, '대응이력.md');
   try {
     // 중복 가드 — 같은 식별자의 대응 헤더가 이미 있으면 다시 쓰지 않는다(감사→대응 재적재 가드와 동일 규약).
@@ -1136,8 +1148,9 @@ async function pickAndRun(self: Agent) {
 
     // ── 파견 분대장 감사 대응을 러너가 대신 기록 ─────────────
     // 샌드박스 워커가 프로젝트 _audit에 직접 못 쓰기 때문(t-b47c6cad 실측: Access denied).
-    if (r.ok && !current.killed && task.command_text.trimStart().startsWith('[감사 대응]')) {
-      recordDispatchResponse(task.command_text, r.output);
+    // dRoot 가 없으면 파견 분대장이 아니다 — 대행 기록 자체를 하지 않는다(좌표 대조 기준도 없다).
+    if (r.ok && !current.killed && dRoot && task.command_text.trimStart().startsWith('[감사 대응]')) {
+      recordDispatchResponse(task.command_text, r.output, path.join(dRoot, '_audit'));
     }
 
     // ── 감사 → 대응 자동 루프 ──────────────────────────────────
