@@ -216,8 +216,9 @@ function runRecord() {
 }
 
 function main() {
-  const mode = process.argv[2];
-  if (mode === '--record') runRecord();
+  // --repo/--vault 인자가 앞에 오면 argv[2]가 '--record'가 아니게 되므로 위치가 아니라 존재로 판정한다.
+  // (에코 감사관 t-aa2e6d2d 감사 지적 — 위치 기반 판정이면 `--repo <경로> --record`가 검증 모드로 빠진다.)
+  if (process.argv.includes('--record')) runRecord();
   else runVerify();
 }
 

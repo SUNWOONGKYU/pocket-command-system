@@ -1132,14 +1132,19 @@ async function pickAndRun(self: Agent) {
               }
             } catch { /* 대응이력 없음/읽기 실패 — 첫 대응일 수 있으니 적재 진행 */ }
           }
-          // 용병 산출물 감사(식별자 t-xxxxxxxx)는 '커밋'이 아니라 '작업'이다 — 문구만 구분하고,
+          // 파견 산출물 감사(식별자 t-xxxxxxxx)는 '커밋'이 아니라 '작업'이다 — 문구만 구분하고,
           // 대응이력 헤더는 중복 가드(`^## 커밋 <id>`)와의 호환을 위해 두 경우 모두 '커밋 <id>'를 유지한다.
           const isMercAudit = (meta.commit || '').startsWith('t-');
+          // 파견 분대장은 샌드박스 워커라 자기 작업폴더 밖에 쓰지 못한다. 대응이력.md는 작업자 폴더
+          // (프로젝트 _audit)에 있으므로 그 경로에 한해 쓰기 승인 토큰을 붙인다. 없으면 대응이 기록되지
+          // 않고 결과 텍스트로만 남는다(t-aa2e6d2d 실측 — Codex CLI가 승인 토큰 없어 append 거부).
+          // 원본은 저장소 밖 vault에 있어 이 승인으로도 손대지 못한다.
+          const grant = isMercAudit && meta.auditDir ? `\n[용병경로=${meta.auditDir}]` : '';
           const respPrompt =
 `[감사 대응] '${NAME}'이(가) 너의 ${isMercAudit ? '작업' : '커밋'}(${meta.commit || ''})을 감사했다. 아래 감사 의견을 읽고 입장을 한국어로 밝혀라(수용/부분수용/반론 + 조치계획). 그 대응을 '${meta.auditDir}/대응이력.md' 에 append 하라. 헤더는 '## 커밋 ${meta.commit || ''} 대응 [<모드>] — <YYYY-MM-DD HH:MM> (${meta.worker})' 형식으로 쓴다. <모드>는 대응한 주체다 — 네 시스템 프롬프트에 '[실행모드=데몬]'이 있으면 '데몬'(자동 백그라운드 워커), 없으면 '소대장'(사람이 붙은 인터랙티브 세션)으로 적는다. 시각은 실제 시각으로 채운다. ${isMercAudit ? '산출물 수정이 필요하면 수정해도 된다(다음 완료 시 다시 자동 감사된다).' : '코드 수정이 필요하면 정상 작업으로 진행해도 된다(새 커밋은 다시 자동 감사된다).'}
 
 [감사 의견]
-${r.output}`;
+${r.output}${grant}`;
           try {
             const legacyResp = { command_text: respPrompt, assigned_agent: meta.worker, status: 'queued', source_chat_id: task.source_chat_id };
             const ins = await sb.from('tasks').insert({ ...legacyResp, ordered_by: 'audit_loop', task_type: 'audit_response_requested', parent_task_id: task.id });
