@@ -43,6 +43,9 @@ scripts/.my-agents.txt
 
 # audit trail (do not commit - prevents post-commit recursion)
 _audit/
+# 감사관 전용 원본 보관소는 저장소 밖(<repo의 부모>/_audit_vault/<repo 이름>)에 둔다.
+# 실수로 저장소 안에 생기더라도 커밋되지 않게 막는다.
+_audit_vault/
 
 # 운영 전용 로컬 기록 (실PC명·실경로·내부 운영 히스토리 — 공개 repo로 전환된 뒤 추적 제외)
 /_WorkLog/

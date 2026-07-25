@@ -555,6 +555,10 @@ async function enqueueDispatchAudit(self: Agent, task: { id: string; source_chat
     const auditorName = await findProjectAuditor(root);
     if (!auditorName) return; // 프로젝트 감사관 미등록이면 감사 없음
     const auditDir = path.join(root, '_audit').replace(/\\/g, '/');
+    // 감사관 전용 원본 보관소 — 작업자 저장소 밖. scripts/audit-integrity-check.js vaultDirFor()·
+    // scripts/enqueue-audit.js 와 같은 규칙이다(한쪽만 바꾸면 원본과 해시가 어긋난다).
+    const vaultDir = path.join(path.dirname(path.resolve(root)), '_audit_vault', path.basename(path.resolve(root))).replace(/\\/g, '/');
+    const integrityScript = path.resolve(process.cwd(), 'scripts', 'audit-integrity-check.js').replace(/\\/g, '/');
     try { fs.mkdirSync(auditDir, { recursive: true }); } catch { /* 감사관 실행 시 재시도됨 */ }
     const tid = 't-' + String(task.id).replace(/-/g, '').slice(0, 8);
     const one = (s: string, n: number) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -577,11 +581,16 @@ async function enqueueDispatchAudit(self: Agent, task: { id: string; source_chat
 
 규칙:
 - 산출물 파일은 절대 수정하지 마라. 읽기·검토만.
-- 단 '${auditDir}' 폴더에는 쓰기 허용. 감사 의견을 '${auditDir}/감사이력.md'에 append 하라
-  (커밋 감사와 같은 파일 — 프로젝트 감사 기록은 한 곳에 모은다).
+- 쓰기가 허용된 곳은 두 곳뿐이다: '${auditDir}'(작업자가 읽는 사본·대응 폴더)와 '${vaultDir}'(감사관 전용 원본 보관소, 저장소 밖).
 - 헤더 형식(그대로 사용): '## 커밋 ${tid} 감사 — <시각> (${auditorName})'
 - 첫 줄에 판정 [정상]/[경미]/[주의]/[중대], 이어서 기준별 근거·권고. 한국어로 간결하게.
-[[AUDITMETA project=dispatch:${self.name}|worker=${self.name}|auditDir=${auditDir}|commit=${tid}|host=${HOST}|actor=daemon]]`;
+
+[감사 기록 무결성 — 반드시 이 순서로 수행. 작업자는 아래 vault 경로에 절대 쓰지 않는다 — 너(${auditorName})만 쓰는 감사관 전용 원본 보관소이며 작업자 저장소 밖에 있다]:
+1. 위에서 작성한 감사 의견 전체 텍스트(헤더 포함)를 '${vaultDir}/감사이력_원본.md' 끝에 그대로 append (구분선 '---' 한 줄을 항목 사이에 둔다). 이 파일이 "원본"이다. 폴더가 없으면 만들어라.
+2. 같은 내용을 '${auditDir}/감사이력.md' 끝에도 동일하게 append (작업자가 읽는 "사본" — 커밋 감사와 같은 파일).
+3. 두 append를 마친 직후, 반드시 다음 명령을 정확히 1회 실행하라: node "${integrityScript}" --repo "${root}" --record
+   (해시·체인 계산은 네가 하지 않는다 — 이 스크립트가 결정론적으로 계산·기록한다. 너는 트리거만 한다. 실행 결과가 실패(0이 아닌 종료코드)로 보이면 그 사실을 감사 의견 말미에 한 줄로 덧붙여라.)
+[[AUDITMETA project=dispatch:${self.name}|worker=${self.name}|auditDir=${auditDir}|vaultDir=${vaultDir}|commit=${tid}|host=${HOST}|actor=daemon]]`;
     await sb.from('tasks').insert({ command_text: prompt, assigned_agent: auditorName, status: 'queued', source_chat_id: task.source_chat_id });
     console.log(`[${NAME}] → '${auditorName}'에게 산출물 감사 작업 자동 적재(${tid})`);
   } catch (e) { console.error(`[${NAME}] 파견 감사 적재 실패(본류 무영향, 무시)`, e); }

@@ -1,7 +1,8 @@
 // 감사 원본(vault) 무결성 검증기 + 결정론적 기록기.
 //   검증만: node scripts/audit-integrity-check.js            (인자 없음 — SessionStart 등에서 호출)
 //   기록:   node scripts/audit-integrity-check.js --record   (감사관이 append 직후 1회 호출)
-//   대상은 pocket-commander _audit/_vault 고정.
+//   대상 지정: --repo <저장소경로> (그 저장소의 감사관 전용 vault) 또는 --vault <vault경로> 직접 지정.
+//   인자가 없으면 이 스크립트가 속한 저장소(pocket-commander)를 대상으로 한다.
 //
 // ★설계 원칙(PO 결정 2026-07-25, B안): 해시 계산을 감사관 LLM에서 완전히 떼어낸다.
 //   LLM(감사관)은 원본을 vault에 append하고 사본을 작업자 폴더에 append하는 것까지만 하고,
@@ -47,8 +48,21 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const REPO_ROOT = path.join(__dirname, '..');
-const VAULT_DIR = path.join(REPO_ROOT, '_audit', '_vault');
+// ★감사관 전용 폴더 분리(PO 지시 2026-07-25): vault(원본)는 작업자 저장소 안이 아니라 저장소 "밖"에 둔다.
+//   경로 규칙: <repo의 부모>/_audit_vault/<repo 이름>/   예) C:/Dev/pocket-commander → C:/Dev/_audit_vault/pocket-commander
+//   저장소 밖이라 gitignore와 무관하게 커밋 대상이 아니고, 작업자가 자기 저장소만 다뤄서는 원본에 닿지 않는다.
+//   (사본 감사이력.md·대응이력.md는 종전대로 <repo>/_audit/ 에 남는다 — 작업자가 읽고 대응하는 곳.)
+// 대상 저장소는 --repo <경로>, vault를 직접 지정하려면 --vault <경로>. 둘 다 없으면 이 스크립트가 속한 저장소.
+function argOf(flag) {
+  const i = process.argv.indexOf(flag);
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : null;
+}
+function vaultDirFor(repoRoot) {
+  const abs = path.resolve(repoRoot);
+  return path.join(path.dirname(abs), '_audit_vault', path.basename(abs));
+}
+const REPO_ROOT = path.resolve(argOf('--repo') || path.join(__dirname, '..'));
+const VAULT_DIR = path.resolve(argOf('--vault') || vaultDirFor(REPO_ROOT));
 const INTEGRITY_LOG = path.join(VAULT_DIR, 'integrity.log');
 const VAULT_FILE = path.join(VAULT_DIR, '감사이력_원본.md');
 

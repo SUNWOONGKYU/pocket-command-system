@@ -9,6 +9,8 @@ const { execSync } = require('child_process');
 // .env.local은 이 스크립트 기준 상대경로로 — 머신마다 pocket-commander 클론 경로가 달라도(이 PC=C:\Dev\..., 랩탑=C:\...) 동작.
 // (예전 하드코딩 'C:/Dev/pocket-commander/.env.local'은 랩탑에서 경로 불일치로 supabase 자격을 못 읽어 감사 스킵되던 버그.)
 const ENV_PATH = path.join(__dirname, '..', '.env.local');
+// 무결성 기록기는 pocket-commander 안에 있지만 감사관 cwd는 프로젝트마다 다르다 — 절대경로로 호출한다.
+const INTEGRITY_SCRIPT = path.join(__dirname, 'audit-integrity-check.js').replace(/\\/g, '/');
 
 // 프로젝트별 설정(worker·auditor·criteria)은 공개본에 실데이터가 tracked되지 않도록 JSON으로 외부화했다.
 //   config/audit-projects.local.json(운영 실데이터, gitignore) 있으면 그걸, 없으면
@@ -45,9 +47,12 @@ function git(a) { try { return execSync('git ' + a, { encoding: 'utf8', maxBuffe
   // 폴더명은 ASCII '_audit' — PowerShell 5.1이 한글 경로를 오독하는 문제 회피. (로그 파일명은 한글 유지)
   const auditDir = path.join(repo, '_audit').replace(/\\/g, '/');
   // 감사 기록 무결성(PO 결정 2026-07-25): _audit/는 gitignore라 위변조 이력이 안 남는다.
-  //   → 감사관 전용 vault 하위폴더에 원본을 두고 SHA-256 로그로 위변조를 탐지한다.
-  //   작업자(에코)는 vaultDir에 절대 쓰지 않는다(같은 workdir 공유이므로 프롬프트로 명시 차단).
-  const vaultDir = path.join(auditDir, '_vault').replace(/\\/g, '/');
+  //   → 감사관 전용 vault에 원본을 두고 SHA-256 로그로 위변조를 탐지한다.
+  // ★감사관 전용 폴더 분리(PO 지시 2026-07-25): vault는 작업자 저장소 "밖"에 둔다.
+  //   <repo의 부모>/_audit_vault/<repo 이름>/ — 저장소 밖이라 커밋 대상이 아니고, 작업자가 자기
+  //   저장소만 다뤄서는 원본에 닿지 않는다. 사본(감사이력.md)·대응이력.md는 종전대로 <repo>/_audit/.
+  //   audit-integrity-check.js 의 vaultDirFor()와 같은 규칙 — 한쪽만 바꾸면 안 된다.
+  const vaultDir = path.join(path.dirname(repo), '_audit_vault', path.basename(repo)).replace(/\\/g, '/');
 
   const url = envGet('NEXT_PUBLIC_SUPABASE_URL') || envGet('SUPABASE_URL');
   const key = envGet('SUPABASE_SERVICE_ROLE_KEY');
@@ -120,16 +125,16 @@ ${cfg.criteria}
 
 규칙:
 - 저장소 소스 파일은 절대 수정·커밋하지 마라. 읽기·검토만(맥락 필요시 git show·파일 읽기).
-- 단, '${auditDir}' 폴더(그 하위 '${vaultDir}' 포함)에는 쓰기 허용.
+- 단, '${auditDir}'(작업자가 읽는 사본·대응 폴더)와 '${vaultDir}'(감사관 전용 원본 보관소, 저장소 밖)에는 쓰기 허용.
 - 헤더 형식(둘 중 하나, 그대로 사용): ${actor === 'daemon'
   ? `'## 커밋 ${short} 감사 — <시각> (${cfg.auditor})' — 워커 '${cfg.worker}'의 정상 자동 작업 커밋.`
   : `'## 커밋 ${short} 감사 — <시각> (${cfg.auditor}) [대화형 세션 전달 필요]' — 대화형 Claude Code 세션이 만든 커밋이라, 워커 '${cfg.worker}'가 아니라 그 대화형 세션이 확인·응답해야 함을 헤더에 명시하라. 대응 작업은 워커에게 자동 배정되지 않는다.`}
 - 감사 의견은 한국어로 간결하게: 첫 줄에 판정 [정상]/[경미]/[주의]/[중대], 이어서 기준별 근거·권고.
 
-[감사 기록 무결성 — 반드시 이 순서로 수행. 작업자(${cfg.worker})는 아래 vault 경로에 절대 쓰지 않는다 — 너(${cfg.auditor})만 쓰는 감사관 전용 원본 보관소다]:
-1. 위에서 작성한 감사 의견 전체 텍스트(헤더 포함)를 '${vaultDir}/감사이력_원본.md' 끝에 그대로 append (구분선 '---' 한 줄을 항목 사이에 둔다). 이 파일이 "원본"이다.
+[감사 기록 무결성 — 반드시 이 순서로 수행. 작업자(${cfg.worker})는 아래 vault 경로에 절대 쓰지 않는다 — 너(${cfg.auditor})만 쓰는 감사관 전용 원본 보관소이며 작업자 저장소 밖에 있다]:
+1. 위에서 작성한 감사 의견 전체 텍스트(헤더 포함)를 '${vaultDir}/감사이력_원본.md' 끝에 그대로 append (구분선 '---' 한 줄을 항목 사이에 둔다). 이 파일이 "원본"이다. 폴더가 없으면 만들어라.
 2. 같은 내용을 '${auditDir}/감사이력.md' 끝에도 동일하게 append (작업자가 읽는 "사본" — 기존과 동일한 위치·형식, 변경 없음).
-3. 두 append를 마친 직후, 반드시 다음 명령을 정확히 1회 실행하라: node scripts/audit-integrity-check.js --record
+3. 두 append를 마친 직후, 반드시 다음 명령을 정확히 1회 실행하라: node "${INTEGRITY_SCRIPT}" --repo "${repo.replace(/\\/g, '/')}" --record
    (해시·체인 계산은 네가 하지 않는다 — 이 스크립트가 결정론적으로 계산·기록한다. 너는 트리거만 한다. 명령 실행 결과가 실패(0이 아닌 종료코드)로 보이면 그 사실을 감사 의견 말미에 한 줄로 덧붙여라.)
 [[AUDITMETA project=${projectKey}|worker=${cfg.worker}|auditDir=${auditDir}|vaultDir=${vaultDir}|commit=${short}|host=${os.hostname()}|actor=${actor}]]`;
 
