@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "worker": "tsx worker/agent-runner.ts",
-    "set-webhook": "tsx scripts/set-webhook.ts"
+    "set-webhook": "tsx scripts/set-webhook.ts",
+    "audit:verify": "node scripts/audit-integrity-check.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
