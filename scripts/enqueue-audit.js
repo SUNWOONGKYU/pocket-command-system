@@ -11,6 +11,7 @@ const { execSync } = require('child_process');
 const ENV_PATH = path.join(__dirname, '..', '.env.local');
 // 무결성 기록기는 pocket-commander 안에 있지만 감사관 cwd는 프로젝트마다 다르다 — 절대경로로 호출한다.
 const INTEGRITY_SCRIPT = path.join(__dirname, 'audit-integrity-check.js').replace(/\\/g, '/');
+const AUDIT_PATHS = require('./audit-paths.js'); // 감사 경로 규칙 단일 출처
 
 // 프로젝트별 설정(worker·auditor·criteria)은 공개본에 실데이터가 tracked되지 않도록 JSON으로 외부화했다.
 //   config/audit-projects.local.json(운영 실데이터, gitignore) 있으면 그걸, 없으면
@@ -45,14 +46,11 @@ function git(a) { try { return execSync('git ' + a, { encoding: 'utf8', maxBuffe
   const commonDir = git('rev-parse --git-common-dir').trim();
   const repo = commonDir ? path.resolve(commonDir, '..') : process.cwd(); // 조회 실패 시 기존 동작(cwd)으로 폴백
   // 폴더명은 ASCII '_audit' — PowerShell 5.1이 한글 경로를 오독하는 문제 회피. (로그 파일명은 한글 유지)
-  const auditDir = path.join(repo, '_audit').replace(/\\/g, '/');
   // 감사 기록 무결성(PO 결정 2026-07-25): _audit/는 gitignore라 위변조 이력이 안 남는다.
-  //   → 감사관 전용 vault에 원본을 두고 SHA-256 로그로 위변조를 탐지한다.
-  // ★감사관 전용 폴더 분리(PO 지시 2026-07-25): vault는 작업자 저장소 "밖"에 둔다.
-  //   <repo의 부모>/_audit_vault/<repo 이름>/ — 저장소 밖이라 커밋 대상이 아니고, 작업자가 자기
-  //   저장소만 다뤄서는 원본에 닿지 않는다. 사본(감사이력.md)·대응이력.md는 종전대로 <repo>/_audit/.
-  //   audit-integrity-check.js 의 vaultDirFor()와 같은 규칙 — 한쪽만 바꾸면 안 된다.
-  const vaultDir = path.join(path.dirname(repo), '_audit_vault', path.basename(repo)).replace(/\\/g, '/');
+  //   → 감사관 전용 vault에 원본을 두고 SHA-256 로그로 위변조를 탐지한다. vault는 저장소 "밖"이다.
+  // 경로 규칙은 audit-paths.js 단일 출처(복제 제거 — 감사 0c404686 관찰 ⓑ).
+  const auditDir = AUDIT_PATHS.posix(AUDIT_PATHS.auditDirFor(repo));
+  const vaultDir = AUDIT_PATHS.posix(AUDIT_PATHS.vaultDirFor(repo));
 
   const url = envGet('NEXT_PUBLIC_SUPABASE_URL') || envGet('SUPABASE_URL');
   const key = envGet('SUPABASE_SERVICE_ROLE_KEY');

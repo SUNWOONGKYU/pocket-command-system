@@ -36,27 +36,43 @@ let REPO_ROOT = null;
 // 대화형(leader) 대응을 DB events + PO 텔레그램으로 흘려보낸다. 데몬 대응은 이미 DB 태스크로 뜨므로 제외.
 //   콕핏 인박스가 events(event_type='audit_response')를 구독해 표시하고, 텔레그램은 능동 알림.
 //   전부 best-effort — 실패해도 절대 턴을 막지 않는다(fire-and-forget, exit는 상위에서 0).
+// Stop 훅은 턴 종료를 붙잡는다. 상대가 응답 없이 매달리면(블랙홀) "절대 턴을 막지 않는다"는 위 약속이
+//   깨지므로, 형제 훅 platoon-session-hook.js 와 동일하게 3초 AbortController 로 끊는다(감사 06afab9c ⓐ).
+//   대응이 여러 건이면 순차 await 라 지연이 누적되던 것도 이 상한으로 묶인다.
+const FETCH_TIMEOUT_MS = 3000;
+async function fetchWithTimeout(input, init) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+  try { return await fetch(input, { ...init, signal: ac.signal }); }
+  finally { clearTimeout(timer); }
+}
+
 async function notifyLeaderResponse(repoName, headerLine, bodyLine) {
   const url = envGet('NEXT_PUBLIC_SUPABASE_URL') || envGet('SUPABASE_URL');
   const key = envGet('SUPABASE_SERVICE_ROLE_KEY');
   const commit = (headerLine.match(/커밋 ((?:t-)?[0-9a-f]{6,40})/) || [])[1] || '?';
+  const at = (headerLine.match(/(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/) || [])[1] || null;
   const idem = 'aresp:' + repoName + ':' + crypto.createHash('sha256').update(headerLine).digest('hex').slice(0, 16);
   // 1) DB events insert (idempotency_key로 중복 방지 — 같은 대응 헤더 재실행돼도 1건)
+  //    ★payload는 메타만 담는다(감사 06afab9c ⓑ). events는 RLS select using(true) 공개읽기라,
+  //      대응 헤더·본문 발췌를 실으면 대응문 내용(경로·인명·내부 사정)이 anon 키로 읽힌다.
+  //      콕핏 인박스는 repo·commit 으로 표시·딥링크하고, 상세는 _audit/대응이력.md 에서 본다.
   if (url && key) {
     try {
-      await fetch(url + '/rest/v1/events', {
+      await fetchWithTimeout(url + '/rest/v1/events', {
         method: 'POST',
         headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', Prefer: 'return=minimal,resolution=ignore-duplicates' },
-        body: JSON.stringify({ event_type: 'audit_response', actor: 'leader', idempotency_key: idem, payload: { repo: repoName, commit, mode: 'leader', header: headerLine.slice(0, 300), body: (bodyLine || '').slice(0, 500) } }),
+        body: JSON.stringify({ event_type: 'audit_response', actor: 'leader', idempotency_key: idem, payload: { repo: repoName, commit, mode: 'leader', at } }),
       });
     } catch { /* 무시 */ }
   }
   // 2) PO 텔레그램 알림(평문 — HTML 파싱 이슈 회피)
+  //    텔레그램은 PO 전용 채널이라 본문 발췌를 유지한다(공개읽기 대상이 아니다).
   const token = envGet('TELEGRAM_BOT_TOKEN');
   const chat = envGet('TELEGRAM_ALERT_CHAT_ID');
   if (token && chat) {
     try {
-      await fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+      await fetchWithTimeout('https://api.telegram.org/bot' + token + '/sendMessage', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chat, text: '📝 감사 대응 완료 (대화형 소대장 세션) — ' + repoName + ' 커밋 ' + commit + '\n' + (bodyLine || '').slice(0, 300) }),
       });

@@ -14,6 +14,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import ws from 'ws';
 
+// 감사 경로 규칙(vault·_audit)의 단일 출처 — 스크립트(CJS)와 공유해야 규칙이 갈라지지 않는다.
+// tsx 는 CJS 로 실행되므로 require 로 그대로 물어온다(전용 .d.ts 를 두지 않기 위해 형 선언을 명시).
+const AUDIT_PATHS = require('../scripts/audit-paths.js') as {
+  vaultDirFor(repoRoot: string): string;
+  auditDirFor(repoRoot: string): string;
+  posix(p: string): string;
+};
+
 // Node 20(<22)은 전역 WebSocket이 없어 supabase-js createClient가 throw한다 → ws로 폴리필.
 if (!(globalThis as any).WebSocket) (globalThis as any).WebSocket = ws as any;
 
@@ -516,23 +524,40 @@ function dispatchRoot(workdir: string | null, kind: string): string | null {
   return null;
 }
 
-function recentOutputFiles(root: string, sinceMs: number): string[] {
-  // 이번 태스크 실행 중 변경된 산출물 후보(mtime 기준) — 감사관에게 검토 대상 힌트로 전달.
-  // _audit/·_작업이력.md·숨김 폴더는 제외(감사 부산물·이력·샌드박스 잡음). best-effort.
+// 순회에서 건너뛸 디렉터리 — 빌드·의존성 산물은 산출물 힌트로서 가치가 없고 항목 수가 많다.
+//   (감사 af40516f ⓐ: 제외 목록이 숨김·_audit·_작업이력.md 뿐이라 node_modules 같은 대용량 폴더를
+//    그대로 완주했다. 워커는 단일 이벤트 루프라 그 동안 하트비트(5초 주기·30초 offline 임계)와
+//    stop 폴링(1.5초)이 함께 멈춰 offline 오판·중단 지연으로 이어진다.)
+const SCAN_SKIP_DIRS = new Set([
+  'node_modules', 'dist', 'build', 'out', 'target', 'vendor', '__pycache__', 'coverage', '.next',
+]);
+// 방문 엔트리 예산 — 매칭이 20건에 못 미쳐도 이만큼 훑으면 중단한다. 제외 목록에 없는 대용량
+// 폴더가 새로 생겨도 순회 시간이 상한을 넘지 않게 하는 안전판(위 ⓐ 권고의 '방문 예산').
+const SCAN_VISIT_BUDGET = 5000;
+
+// 이번 태스크 실행 중 변경된 산출물 후보(mtime 기준) — 감사관에게 검토 대상 힌트로 전달.
+//   scanDirs: 실제로 훑을 폴더들(파견은 <root>/<kind>-worktree·<kind>-artifacts 둘 다).
+//   relBase : 반환 경로의 기준(감사 프롬프트가 안내하는 폴더와 같아야 감사관이 파일을 찾을 수 있다).
+// best-effort — 실패는 조용히 건너뛴다.
+function recentOutputFiles(scanDirs: string[], relBase: string, sinceMs: number): string[] {
   const out: string[] = [];
+  let visited = 0;
   const walk = (dir: string, depth: number) => {
-    if (depth > 3 || out.length >= 20) return;
+    if (depth > 3 || out.length >= 20 || visited >= SCAN_VISIT_BUDGET) return;
     let entries: fs.Dirent[] = [];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
-      if (out.length >= 20) return;
+      if (out.length >= 20 || visited >= SCAN_VISIT_BUDGET) return;
+      visited++;
       if (e.name.startsWith('.') || e.name === '_audit' || e.name === '_작업이력.md') continue;
+      if (e.isDirectory() && SCAN_SKIP_DIRS.has(e.name)) continue;
       const p = path.join(dir, e.name);
       if (e.isDirectory()) walk(p, depth + 1);
-      else { try { if (fs.statSync(p).mtimeMs >= sinceMs) out.push(path.relative(root, p).replace(/\\/g, '/')); } catch { /* 파일 소멸 등 — 무시 */ } }
+      else { try { if (fs.statSync(p).mtimeMs >= sinceMs) out.push(path.relative(relBase, p).replace(/\\/g, '/')); } catch { /* 파일 소멸 등 — 무시 */ } }
     }
   };
-  walk(root, 0);
+  for (const d of scanDirs) walk(path.resolve(d), 0);
+  if (visited >= SCAN_VISIT_BUDGET) console.log(`[${NAME}] 산출물 스캔 예산 소진(${SCAN_VISIT_BUDGET} 엔트리) — 힌트 목록이 일부만 담겼을 수 있음`);
   return out;
 }
 
@@ -583,9 +608,12 @@ function recordDispatchResponse(cmdText: string, output: string, expectedAuditDi
 // 감사관은 workdir 가 프로젝트 루트와 같고 이름이 '감사관' 으로 끝나는 agents 행으로 찾는다
 // (config/audit-projects.local.json 의 projectKey→auditor 매핑과 동일 결과, 경로 매핑 없이).
 async function findProjectAuditor(root: string): Promise<string | null> {
+  // Windows 경로는 대소문자를 구분하지 않으므로 비교 전에 정규화한다 — agents.workdir 가 'C:/dev/...'
+  // 처럼 케이스만 달라도 매칭에 실패해 '감사관 미등록'으로 감사가 조용히 생략된다(감사 dd2d3dcb 관찰).
+  const norm = (p: string) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p));
   const { data } = await sb.from('agents').select('name,workdir').like('name', '%감사관');
   const hit = (data || []).find((a: { name: string; workdir: string | null }) =>
-    a.workdir && path.resolve(a.workdir) === path.resolve(root));
+    a.workdir && norm(a.workdir) === norm(root));
   return hit ? hit.name : null;
 }
 
@@ -594,20 +622,32 @@ async function enqueueDispatchAudit(self: Agent, task: { id: string; source_chat
     if (!self.workdir) return;
     const auditorName = await findProjectAuditor(root);
     if (!auditorName) return; // 프로젝트 감사관 미등록이면 감사 없음
-    const auditDir = path.join(root, '_audit').replace(/\\/g, '/');
-    // 감사관 전용 원본 보관소 — 작업자 저장소 밖. scripts/audit-integrity-check.js vaultDirFor()·
-    // scripts/enqueue-audit.js 와 같은 규칙이다(한쪽만 바꾸면 원본과 해시가 어긋난다).
-    const vaultDir = path.join(path.dirname(path.resolve(root)), '_audit_vault', path.basename(path.resolve(root))).replace(/\\/g, '/');
-    const integrityScript = path.resolve(process.cwd(), 'scripts', 'audit-integrity-check.js').replace(/\\/g, '/');
+    // 경로 규칙은 scripts/audit-paths.js 단일 출처를 쓴다(전엔 3파일에 복제 — 감사 0c404686 관찰 ⓑ).
+    const auditDir = AUDIT_PATHS.posix(AUDIT_PATHS.auditDirFor(root));
+    const vaultDir = AUDIT_PATHS.posix(AUDIT_PATHS.vaultDirFor(root));
+    // __dirname 기준 — process.cwd() 의존이면 기동 방식이 바뀔 때 경로가 깨진다(감사 0c404686 관찰 ⓐ).
+    const integrityScript = AUDIT_PATHS.posix(path.resolve(__dirname, '..', 'scripts', 'audit-integrity-check.js'));
     try { fs.mkdirSync(auditDir, { recursive: true }); } catch { /* 감사관 실행 시 재시도됨 */ }
     const tid = 't-' + String(task.id).replace(/-/g, '').slice(0, 8);
     const one = (s: string, n: number) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
-    const changed = recentOutputFiles(self.workdir, startedAt);
+    // 감사 대상 폴더 — 파견 실작업은 self.workdir 이 아니라 <root>/<kind>-worktree 에서 이뤄지고
+    //   검증보고서는 <kind>-artifacts 에 남는다(3계층 스킬 §4.5). 전에는 항상 self.workdir 을 봐서
+    //   감사관이 빈 폴더를 보고 '변경 없음 → 내용 없는 정상' 판정을 내릴 수 있었다(감사 c839d4d9 ⓐ).
+    //   dispatchRoot(=root)가 두 폴더의 존재를 이미 확인하고 반환된 값이므로 그대로 감사 대상으로 쓴다.
+    //   폴더가 사라진 경우엔 종전 동작(self.workdir)으로 폴백한다.
+    const pairDirs = [path.join(root, `${self.kind}-worktree`), path.join(root, `${self.kind}-artifacts`)]
+      .filter((d) => { try { return fs.statSync(d).isDirectory(); } catch { return false; } });
+    const scanDirs = pairDirs.length ? pairDirs : [self.workdir];
+    const targetBase = pairDirs.length ? root : self.workdir;
+    const targetLabel = pairDirs.length
+      ? `${AUDIT_PATHS.posix(root)}  (하위 ${pairDirs.map((d) => path.basename(d)).join(' · ')})`
+      : AUDIT_PATHS.posix(self.workdir);
+    const changed = recentOutputFiles(scanDirs, targetBase, startedAt);
     // grok 감사관은 프롬프트가 argv 단일 라인(약 8K 한계)으로 전달되므로 요약 상한을 짧게 유지한다.
     const prompt =
 `[산출물 감사 — 산출물 읽기전용] 파견 분대장 '${self.name}'(${VENDOR_LABEL[self.kind] || self.kind})이 방금 작업 1건을 완료했다.
 
-[산출물 폴더] ${self.workdir.replace(/\\/g, '/')}  ← 감사 대상. 아래 파일 경로는 이 폴더 기준 상대경로다.
+[산출물 폴더] ${targetLabel}  ← 감사 대상. 아래 파일 경로는 이 폴더 기준 상대경로다.
 [지시문(요약)] ${one(task.command_text, 1000)}
 [결과 보고(요약)] ${one(output, 1500)}
 [이번 작업에서 변경된 파일] ${changed.length ? changed.join(', ') : '탐지 없음 — 결과 보고에 언급된 파일을 직접 확인'}
@@ -1149,8 +1189,11 @@ async function pickAndRun(self: Agent) {
     // ── 파견 분대장 감사 대응을 러너가 대신 기록 ─────────────
     // 샌드박스 워커가 프로젝트 _audit에 직접 못 쓰기 때문(t-b47c6cad 실측: Access denied).
     // dRoot 가 없으면 파견 분대장이 아니다 — 대행 기록 자체를 하지 않는다(좌표 대조 기준도 없다).
-    if (r.ok && !current.killed && dRoot && task.command_text.trimStart().startsWith('[감사 대응]')) {
-      recordDispatchResponse(task.command_text, r.output, path.join(dRoot, '_audit'));
+    if (r.ok && !current.killed && task.command_text.trimStart().startsWith('[감사 대응]')) {
+      if (dRoot) recordDispatchResponse(task.command_text, r.output, AUDIT_PATHS.auditDirFor(dRoot));
+      // 감사 시점엔 있던 파견 폴더 쌍이 지금은 없는 경우 — 조용히 생략하면 대응 누락 원인 추적이 어렵다
+      // (감사 cba5d537 관찰). 위험 방향은 아니지만 사유를 한 줄 남긴다.
+      else if (VENDOR_CLI_KINDS.has(self.kind)) console.log(`[${NAME}] 대응이력 대행 생략 — 파견 폴더 쌍(${self.kind}-worktree·${self.kind}-artifacts) 미탐지로 기준 경로 없음`);
     }
 
     // ── 감사 → 대응 자동 루프 ──────────────────────────────────
@@ -1190,7 +1233,11 @@ async function pickAndRun(self: Agent) {
           const respMeta = isMercAudit && meta.auditDir
             ? `\n[[RESPMETA auditDir=${meta.auditDir}|commit=${meta.commit || ''}|worker=${meta.worker || ''}]]` : '';
           const respPrompt =
-`[감사 대응] '${NAME}'이(가) 너의 ${isMercAudit ? '작업' : '커밋'}(${meta.commit || ''})을 감사했다. 아래 감사 의견을 읽고 입장을 한국어로 밝혀라(수용/부분수용/반론 + 조치계획). 그 대응을 '${meta.auditDir}/대응이력.md' 에 append 하라. 헤더는 '## 커밋 ${meta.commit || ''} 대응 [<모드>] — <YYYY-MM-DD HH:MM> (${meta.worker})' 형식으로 쓴다. <모드>는 대응한 주체다 — 네 시스템 프롬프트에 '[실행모드=데몬]'이 있으면 '데몬'(자동 백그라운드 워커), 없으면 '소대장'(사람이 붙은 인터랙티브 세션)으로 적는다. 시각은 실제 시각으로 채운다. ${isMercAudit ? '산출물 수정이 필요하면 수정해도 된다(다음 완료 시 다시 자동 감사된다).' : '코드 수정이 필요하면 정상 작업으로 진행해도 된다(새 커밋은 다시 자동 감사된다).'}
+`[감사 대응] '${NAME}'이(가) 너의 ${isMercAudit ? '작업' : '커밋'}(${meta.commit || ''})을 감사했다. 아래 감사 의견을 읽고 입장을 한국어로 밝혀라(수용/부분수용/반론 + 조치계획). ${isMercAudit
+  // 파견(t-)은 러너가 대신 기록한다(recordDispatchResponse). 워커에게 append 를 지시하면 샌드박스가
+  // 거부해 매번 실패하는 시도를 하고, 대응문을 코드블록으로 인용해 되돌려 잡음이 생긴다(실측·감사 a9c88bae 관찰).
+  ? '대응문은 네 답변 본문으로만 작성하라 — 파일 기록은 시스템이 대신한다. 감사 이력 파일을 직접 열거나 쓰려 하지 마라. 헤더 줄도 붙이지 마라(시스템이 붙인다).'
+  : `그 대응을 '${meta.auditDir}/대응이력.md' 에 append 하라. 헤더는 '## 커밋 ${meta.commit || ''} 대응 [<모드>] — <YYYY-MM-DD HH:MM> (${meta.worker})' 형식으로 쓴다. <모드>는 대응한 주체다 — 네 시스템 프롬프트에 '[실행모드=데몬]'이 있으면 '데몬'(자동 백그라운드 워커), 없으면 '소대장'(사람이 붙은 인터랙티브 세션)으로 적는다. 시각은 실제 시각으로 채운다.`} ${isMercAudit ? '산출물 수정이 필요하면 수정해도 된다(다음 완료 시 다시 자동 감사된다).' : '코드 수정이 필요하면 정상 작업으로 진행해도 된다(새 커밋은 다시 자동 감사된다).'}
 
 [감사 의견]
 ${r.output}${respMeta}`;

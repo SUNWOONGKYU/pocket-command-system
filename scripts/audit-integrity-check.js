@@ -48,18 +48,13 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-// ★감사관 전용 폴더 분리(PO 지시 2026-07-25): vault(원본)는 작업자 저장소 안이 아니라 저장소 "밖"에 둔다.
-//   경로 규칙: <repo의 부모>/_audit_vault/<repo 이름>/   예) C:/Dev/pocket-commander → C:/Dev/_audit_vault/pocket-commander
-//   저장소 밖이라 gitignore와 무관하게 커밋 대상이 아니고, 작업자가 자기 저장소만 다뤄서는 원본에 닿지 않는다.
-//   (사본 감사이력.md·대응이력.md는 종전대로 <repo>/_audit/ 에 남는다 — 작업자가 읽고 대응하는 곳.)
+// 경로 규칙(vault 위치)은 audit-paths.js 단일 출처를 쓴다 — 전엔 이 파일·enqueue-audit.js·
+//   worker/agent-runner.ts 세 곳에 복제돼 있었고, 어긋나면 원본과 해시가 갈라진다(감사 0c404686 관찰 ⓑ).
 // 대상 저장소는 --repo <경로>, vault를 직접 지정하려면 --vault <경로>. 둘 다 없으면 이 스크립트가 속한 저장소.
+const { vaultDirFor } = require('./audit-paths.js');
 function argOf(flag) {
   const i = process.argv.indexOf(flag);
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : null;
-}
-function vaultDirFor(repoRoot) {
-  const abs = path.resolve(repoRoot);
-  return path.join(path.dirname(abs), '_audit_vault', path.basename(abs));
 }
 const REPO_ROOT = path.resolve(argOf('--repo') || path.join(__dirname, '..'));
 const VAULT_DIR = path.resolve(argOf('--vault') || vaultDirFor(REPO_ROOT));

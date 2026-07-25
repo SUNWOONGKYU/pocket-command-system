@@ -517,21 +517,28 @@ export default function Cockpit() {
 
   // 감사 대응 — 계약: event_type='audit_response'(Stop 훅 response-actor-stamp가 대화형 대응 시 적재).
   //   대화형 세션의 감사 대응은 파일(_audit/대응이력.md)에만 남아 대시보드에 안 떴다 → 이 이벤트로 능동 표시.
+  //   ★24h 윈도우(감사 cbae25f3 ⓐ): 이 카테고리만 해소 조건이 없어 영구 누적됐다. 그러면 ① 🔔 배지가
+  //     상시 비영으로 고착돼 신호가치가 죽고, ② events는 단일 공유 쿼리(limit 50)라 빈도 높은 감사 대응이
+  //     풀을 잠식해 merge_conflict(시간 제한 없는 실조치 항목)를 인박스 밖으로 밀어낸다.
+  //     다른 카테고리와 같은 관행(failed 24h·audit_flag 24h)으로 맞춘다 — 새 상태·클릭 부담 없음.
+  //     상세는 _audit/대응이력.md 에 영구 보존되므로 24h 경과분이 사라져도 기록 손실이 아니다.
   const auditResponseItems: InboxItem[] = events
-    .filter((e) => e.event_type === 'audit_response')
+    .filter((e) => e.event_type === 'audit_response' && new Date(e.created_at).getTime() >= Date.now() - DAY_MS)
     .map((e) => {
-      const payload = (e.payload || {}) as { repo?: string; commit?: string; body?: string };
+      // payload는 메타만 담는다(events가 anon 공개읽기 — 06afab9c ⓑ). 본문은 여기서 표시하지 않는다.
+      const payload = (e.payload || {}) as { repo?: string; commit?: string; at?: string };
       const proj = PROJECTS.find((p) => p.git && p.git.replace(/\\/g, '/').endsWith('/' + (payload.repo || '\0')));
       return {
         id: 'ar-' + e.id, kind: 'audit_response',
         label: (proj?.label || payload.repo || '감사 대응') + (payload.commit ? ` · ${payload.commit}` : ''),
-        detail: (payload.body || '대화형 세션 감사 대응').slice(0, 80),
+        detail: '대화형 세션 감사 대응' + (payload.at ? ` (${payload.at})` : '') + ' — 상세는 _audit/대응이력.md',
         time: e.created_at, projectId: proj?.id,
       } as InboxItem;
     })
-    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-    .slice(0, 20);
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
+  // 배지는 표시 목록과 같은 배열 길이를 더한다 — 전엔 slice(0,20) 뒤 길이를 써서 20건을 넘으면
+  // 배지가 실제보다 적게 나왔다(감사 cbae25f3 관찰 ⓑ). 24h 윈도우가 상한 역할을 하므로 slice는 뺐다.
   const inboxCount = exceptionItems.length + approvalItems.length + conflictItems.length + auditResponseItems.length;
 
   // ── 함대 상태 집계 — 헤더 스트립용 (전 에이전트를 파생상태로 분류) ──
