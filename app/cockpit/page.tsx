@@ -642,7 +642,9 @@ export default function Cockpit() {
       <header className="bar">
         <div className="wordmark">
           POCKET COMMAND <span className="accent">SUPPORTING SYSTEM</span>
-          <span className="sub">콕핏 · 오너 지휘 — 명령·취소·재시도 (결과 알림은 텔레그램)</span>
+          {/* 서브라인은 이 화면이 무엇인지만 정확히 말한다. 예전 '(결과 알림은 텔레그램)'은 사실과 달랐다 —
+              결과는 이 콕핏 대화(받은 말풍선)·인박스에 바로 뜨고, 텔레그램은 그중 하나의 경로일 뿐이다. */}
+          <span className="sub">콕핏 · 오너 지휘 — 명령·취소·재시도</span>
         </div>
         <nav className="nav">
           <button
