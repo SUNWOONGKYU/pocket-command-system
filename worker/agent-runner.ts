@@ -541,6 +541,11 @@ function dispatchRoot(workdir: string | null, kind: string): string | null {
 const SCAN_SKIP_DIRS = new Set([
   'node_modules', 'dist', 'build', 'out', 'target', 'vendor', '__pycache__', 'coverage', '.next',
 ]);
+// 숨김 항목은 원칙적으로 제외하되(.git·.venv·샌드박스 부산물 등 잡음), '진짜 산출물일 수 있는' 몇 개는
+//   예외로 본다(PO 결정 2026-07-26). 전엔 점으로 시작하면 전부 빠져서 .github/workflows 같은 정상
+//   산출물이 힌트에서 사라졌다 — 감사관이 '변경 없음'으로 읽을 위험(검토 지적 ⑤).
+//   node_modules 잡음 차단은 그대로 유지되므로 20건 상한을 다시 먹는 부작용은 없다.
+const SCAN_HIDDEN_ALLOW = new Set(['.github', '.well-known', '.openai', '.vscode', '.claude', '.config']);
 // 방문 엔트리 예산 — 매칭이 20건에 못 미쳐도 이만큼 훑으면 중단한다. 제외 목록에 없는 대용량
 // 폴더가 새로 생겨도 순회 시간이 상한을 넘지 않게 하는 안전판(위 ⓐ 권고의 '방문 예산').
 const SCAN_VISIT_BUDGET = 5000;
@@ -584,7 +589,9 @@ function recentOutputFiles(scanDirs: string[], relBase: string, sinceMs: number)
       for (const e of entries) {
         if (out.length >= 20 || visited >= SCAN_VISIT_BUDGET) { truncated = true; return; }
         visited++;
-        if (e.name.startsWith('.') || e.name === '_audit' || e.name === '_작업이력.md') continue;
+        if (e.name === '_audit' || e.name === '_작업이력.md') continue;
+        // 숨김은 허용목록에 있는 폴더만 통과. 숨김 '파일'(.env 등)은 계속 제외 — 시크릿 위험 + 잡음.
+        if (e.name.startsWith('.') && !(e.isDirectory() && SCAN_HIDDEN_ALLOW.has(e.name))) continue;
         if (e.isDirectory() && SCAN_SKIP_DIRS.has(e.name)) continue;
         const p = path.join(dir, e.name);
         if (e.isDirectory()) walk(p, depth + 1);
@@ -693,7 +700,7 @@ async function enqueueDispatchAudit(self: Agent, task: { id: string; source_chat
 [지시문(요약)] ${one(task.command_text, 1000)}
 [결과 보고(요약)] ${one(output, 1500)}
 [이번 작업에서 변경된 파일] ${changed.length ? changed.join(', ') : '탐지 없음 — 결과 보고에 언급된 파일을 직접 확인'}${scan.truncated ? '\n[주의] 위 목록은 상한(20건)·탐색 예산에 걸려 잘렸다 — 전부가 아니다. 결과 보고에 언급된 파일을 직접 확인하라.' : ''}
-[스캔 제외] 숨김 항목(.으로 시작)·_audit·_작업이력.md·의존성/빌드 폴더(node_modules·dist·build·out·target·vendor 등)는 목록에서 빠진다. 그런 위치가 이번 작업의 산출물이면 직접 열어 확인하라.
+[스캔 제외] _audit·_작업이력.md·의존성/빌드 폴더(node_modules·dist·build·out·target·vendor 등)·숨김 항목은 목록에서 빠진다(단 ${[...SCAN_HIDDEN_ALLOW].join('·')} 폴더는 예외로 포함). 그런 위치가 이번 작업의 산출물이면 직접 열어 확인하라.
 
 너는 '${auditorName}'이다. 위 작업 산출물을 감사하라. 5기준:
 ① 정확성 — 산출물이 지시를 실제로 충족하는가. 가짜/샘플 데이터·항상 실패하는 분기가 실동작처럼 표현되지 않았는가.
