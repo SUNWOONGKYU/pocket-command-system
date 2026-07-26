@@ -86,13 +86,14 @@
     <p class="sub">주머니 속 지휘소</p>
     <div class="lead">"폰으로 명령하면, 내 컴퓨터들이 알아서 일하는 시스템."</div>
     <h3>어떤 문제를 푸는가</h3>
-    <p>AI(클로드 등)에게 일을 시키려면 보통 컴퓨터 앞에 앉아 화면을 켜고 채팅해야 합니다.</p>
+    <p>AI에게 일을 시키려면 보통 컴퓨터 앞에 앉아 화면을 켜고 채팅해야 합니다.</p>
     <ul><li>외출 중엔 일을 못 시킨다.</li><li>한 번에 한 가지 대화만 붙잡고 있어야 한다.</li><li>컴퓨터를 여러 대 두고 동시에 굴리기 어렵다.</li></ul>
     <p>Pocket Command Supporting System은 이 셋을 뒤집습니다.</p>
     <ul>
-      <li><strong>폰만 있으면</strong> 됩니다. 텔레그램으로 "○○ 해줘" 한 줄 보내면 끝.</li>
-      <li>일은 <strong>백그라운드에서 알아서</strong> 돌아갑니다. 던져놓고 다른 일 하면 됩니다.</li>
+      <li><strong>폰만 있으면</strong> 됩니다. 모바일웹 콕핏에서 프로젝트·워커를 탭으로 골라 명령을 보내면 끝.</li>
+      <li>일은 <strong>백그라운드에서 알아서</strong> 돌아갑니다. 던져놓고 다른 일 하면 됩니다. 결과는 <strong>텔레그램과 콕핏 양쪽</strong>으로 돌아옵니다.</li>
       <li>일꾼(워커)을 <strong>얼마든지 늘릴 수 있습니다.</strong> 늘릴수록 처리량이 커집니다.</li>
+      <li><strong>한 회사 AI에 묶이지 않습니다.</strong> Claude Code · OpenAI Codex · xAI Grok · Google Antigravity가 같은 큐에서 동시에 돕니다.</li>
     </ul>
     <div class="callout">💡 <strong>비유</strong> — 회사 대표가 외근 중에 카톡으로 지시하면, 사무실의 여러 팀이 각자 일을 받아 처리하고 결과를 다시 카톡으로 보고하는 모습. 그걸 AI로 구현한 것.</div>
   </section>
@@ -102,11 +103,14 @@
     <h2>무엇이 다른가</h2>
     <table>
       <tr><th>보통의 AI 사용</th><th>Pocket Command Supporting System</th></tr>
-      <tr><td>컴퓨터 앞에 앉아야 함</td><td><strong>폰에서</strong> 지시</td></tr>
+      <tr><td>컴퓨터 앞에 앉아야 함</td><td><strong>폰(모바일웹 콕핏)에서</strong> 지시</td></tr>
       <tr><td>한 번에 한 대화</td><td><strong>여러 일꾼 동시</strong> 가동</td></tr>
       <tr><td>사람이 매번 시켜야 함</td><td><strong>이벤트로 자동</strong> 작동(예: 커밋되면 자동 감사)</td></tr>
-      <tr><td>결과를 직접 확인</td><td>텔레그램 보고 + <strong>실시간 대시보드</strong></td></tr>
-      <tr><td>일 시키고 검수도 사람이</td><td><strong>감사관 AI가 자동 검수</strong>하고 일꾼이 답변</td></tr>
+      <tr><td>명령도 사람이, 배정은 AI가 추측</td><td><strong>콕핏에서 사람이 직접 탭 선택</strong> — 오배정 없음</td></tr>
+      <tr><td>결과를 직접 확인</td><td>텔레그램 보고 + <strong>실시간 대시보드</strong> 양쪽</td></tr>
+      <tr><td>일 시키고 검수도 사람이</td><td><strong>감사관 AI가 자동 검수</strong>하고, 고칠 게 있을 때만 일꾼이 대응</td></tr>
+      <tr><td>한 회사 AI에 종속</td><td><strong>Claude·ChatGPT(Codex)·Gemini(Antigravity)·Grok</strong>을 한 큐에서 동시 운용</td></tr>
+      <tr><td>AI가 만든 것을 아무도 안 봄</td><td><strong>다른 회사 AI가 교차 감사</strong> + 감사 기록 위변조 탐지 봉인</td></tr>
     </table>
     <div class="callout">핵심 가치는 <strong>레버리지</strong> — 사람 개입 없이도 "일하고 → 검증하고 → 후속 조치"가 스스로 돌아간다.</div>
   </section>
@@ -118,8 +122,10 @@
       <tr><th>편제</th><th>정체</th><th>설명</th></tr>
       <tr><td><strong>지휘관</strong></td><td>사람(PO)</td><td>최종 명령권자. 통수권자.</td></tr>
       <tr><td><strong>지휘소</strong></td><td>PCSS 자기 자신(워커 "에코" + 전담 감사관)</td><td>이 시스템 자신의 코드를 개발·관리하는 자기참조 카드. (참모장·오케스트레이터는 2026-07-13 폐지 — 배정은 지휘관이 콕핏에서 직접.)</td></tr>
+      <tr><td><strong>파견 분대장</strong></td><td>다른 회사 AI 코딩 에이전트</td><td>Codex(OpenAI)·Grok(xAI)·Antigravity(Google). 전용 작업폴더를 받아 실작업을 하고, 산출물은 자동 감사된다.</td></tr>
+      <tr><td><strong>용병</strong></td><td>외부 AI 단발 자문</td><td>전용 폴더 없이 의견만 받는 호출. 실작업·커밋을 하지 않는다.</td></tr>
       <tr><td><strong>중대</strong></td><td>PC 한 대</td><td>여러 소대를 호스팅하는 물리 컴퓨터.</td></tr>
-      <tr><td><strong>소대</strong></td><td>워커 한 개</td><td>실제로 일하는 AI 인스턴스(소대장).</td></tr>
+      <tr><td><strong>소대</strong></td><td>워커 한 개</td><td>실제로 일하는 AI 인스턴스(소대장). Claude Code·Codex·Grok·Antigravity 중 무엇이든 될 수 있다.</td></tr>
       <tr><td><strong>분대</strong></td><td>소환된 팀원</td><td>소대장이 필요할 때 즉석 소환하는 임시 조력자.</td></tr>
       <tr><td><strong>감사관</strong></td><td>검수 전용 워커</td><td>특정 워커의 산출물을 자동으로 감사하고 의견을 냄.</td></tr>
     </table>
@@ -220,14 +226,15 @@
     <ul>
       <li><strong>대시보드</strong>: Next.js (App Router) + TypeScript, Vercel 배포</li>
       <li><strong>데이터/실시간</strong>: Supabase(PostgreSQL) — <code>agents</code>·<code>tasks</code> + Realtime 구독</li>
-      <li><strong>워커 두뇌</strong>: claude CLI(<strong>구독 인증</strong>, API 키 아님) — 로컬 PC의 Claude Code를 실행 엔진으로</li>
+      <li><strong>워커 두뇌(어댑터 방식, 벤더 중립)</strong>: 워커마다 <code>kind</code>로 실행 엔진을 고른다 — <code>claude_code</code>(claude CLI, <strong>구독 인증</strong>, API 키 아님) · <code>claude_api</code> · <code>codex</code>(OpenAI) · <code>grok</code>(xAI) · <code>antigravity</code>(Google) · <code>python</code>. 큐·상태·감사 파이프라인은 어느 엔진이든 동일하게 동작</li>
       <li><strong>입출력</strong>: Telegram Bot (Webhook + sendMessage)</li>
       <li><strong>호스트</strong>: 각 사용자 PC — 워커는 Node(tsx) 데몬</li>
     </ul>
     <h3>데이터 모델 (핵심 2테이블)</h3>
     <ul>
-      <li><code>agents</code>: name·role·squad(중대)·kind·host(PC)·workdir·status·last_heartbeat_at·beats</li>
+      <li><code>agents</code>: name·role·squad(중대)·kind(python/claude_code/claude_api/<strong>codex/grok/antigravity</strong>)·host(PC)·workdir·status·last_heartbeat_at·beats</li>
       <li><code>tasks</code>: command_text·assigned_agent·status(queued/in_progress/done/failed)·source_chat_id·result</li>
+      <li>v3.1부터 <code>hosts</code>·<code>platoons</code>·<code>platoon_runs</code>·<code>audits</code>·<code>events</code> 추가. 콕핏 인박스(예외함·승인함·충돌 경고·감사 대응)는 <code>events</code>를 구독해 표시</li>
     </ul>
     <h3>컴포넌트</h3>
     <pre>[콕핏(모바일웹)] ─프로젝트·워커 탭 선택─▶ /api/command
@@ -236,7 +243,7 @@
                                     tasks 큐(Supabase)
                                           ▲ 폴링/픽업
         각 PC: agent-runner.ts 데몬 ──────┘
-          - 하트비트(5초) · 큐 픽업·실행(claude CLI)
+          - 하트비트(5초) · 큐 픽업·실행(kind별 어댑터: claude/codex/grok/antigravity)
           - control='stop' 즉시 kill · 결과 → tasks.result + Telegram(+콕핏 딥링크 버튼) + 대시보드
 
 [Telegram] ─webhook─▶ /api/telegram — /status·/명단 조회 전용(명령 아님)</pre>
@@ -244,14 +251,18 @@
     <ul>
       <li><strong>하트비트/생존감지</strong> — 5초마다 갱신, 끊기면 offline (Supabase 호출 타임아웃으로 stale 소켓 정지 방지)</li>
       <li><strong>명령 전달</strong> — 프롬프트를 셸 명령줄이 아닌 <strong>stdin</strong>으로(Windows cmd.exe 멀티라인 첫 줄 잘림 회피)</li>
-      <li><strong>감사 파이프라인</strong> — repo의 <code>post-commit</code> 훅 → 커밋 정보 캡처 → 감사 작업 적재 → 감사관 검토 → <code>_audit/</code>(gitignore) 기록 → 워커 대응 자동 적재</li>
-      <li><strong>감사관 격리</strong> — 소스 읽기 전용, 사람의 명령 배정 대상이 아님(커밋 이벤트로만 작동하는 자동 전용)</li>
+      <li><strong>감사 파이프라인</strong> — repo의 <code>post-commit</code> 훅 → 커밋 정보 캡처 → 감사 작업 적재 → 감사관 검토 → <strong>원본은 저장소 밖 vault</strong>(<code>&lt;repo의 부모&gt;/_audit_vault/&lt;repo 이름&gt;/</code>), <strong>사본은 repo의 <code>_audit/</code></strong>(gitignore) → 해시 체인 갱신 → <strong>판정이 <code>[조치필요]</code>일 때만</strong> 워커 대응 적재. 비기능 커밋(docs/chore/style/ci)은 자동 생략하되 의존성 변경은 항상 감사</li>
+      <li><strong>감사관 격리</strong> — 소스 읽기 전용, 사람의 명령 배정 대상이 아님(커밋 이벤트로만 작동하는 자동 전용). vault가 저장소 밖이라 작업자는 자기 저장소만 다뤄서는 원본에 닿지 못함(경로로 갈라 둔 물리적 격리)</li>
+      <li><strong>외부 벤더 격리</strong> — codex·grok·antigravity 프로세스에는 DB 키·봇 토큰·API 키를 환경변수에서 제거한 채 전달하고, 쓰기 범위는 자기 작업폴더로 제한. 감사 대응 기록도 워커에 권한을 주지 않고 러너가 대신 남김</li>
     </ul>
     <h3>운영 스크립트</h3>
     <ul>
       <li><code>start-workers.ps1</code> / <code>install-autostart.ps1</code> — 로그온 시 자동 기동</li>
       <li><code>update.bat</code> — git pull + 의존성 + 이 PC 워커 재기동(원클릭)</li>
       <li><code>install-auditor.ps1</code> — repo에 <code>_audit/</code> + gitignore + 훅 설치</li>
+      <li><code>scripts/enqueue-audit.js</code> — post-commit → 감사 작업 적재</li>
+      <li><code>scripts/audit-integrity-check.js</code> — 감사 원본 해시 체인 기록·검증</li>
+      <li><code>scripts/audit-paths.cjs</code> · <code>audit-verdict.cjs</code> · <code>audit-response-scan.cjs</code> — 경로 규칙·판정 규격·대응 헤더 파싱의 단일 출처</li>
     </ul>
   </section>
 
@@ -262,7 +273,7 @@
       <li><strong>Supabase 프로젝트</strong> 생성 → <code>agents</code>·<code>tasks</code> 스키마 적용</li>
       <li><strong>Telegram 봇</strong> 생성(BotFather) → 토큰 → Webhook 등록</li>
       <li><strong>대시보드</strong> 배포(Next.js → Vercel) + 환경변수(Supabase·텔레그램)</li>
-      <li><strong>워커 데몬</strong> 설치: 각 PC에 claude CLI(구독 로그인) + Node + repo 클론 → 워커 기동</li>
+      <li><strong>워커 데몬</strong> 설치: 각 PC에 쓰려는 AI의 CLI(claude 구독 로그인 / Codex / Grok / Antigravity 중 필요한 것) + Node + repo 클론 → 워커 기동</li>
       <li><strong>에이전트 등록</strong>: <code>agents</code>에 워커 한 줄 추가(host=그 PC) → 자동 기동 포함</li>
       <li><strong>콕핏 프로젝트 매핑</strong>: <code>config/projects.json</code>에 <code>worker</code>/<code>auditor</code>(agents.name과 일치)로 프로젝트 카드 정의</li>
       <li>(선택) <strong>감사관</strong>: <code>install-auditor.ps1</code>로 프로젝트에 감사 파이프라인 장착</li>
