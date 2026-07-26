@@ -69,7 +69,7 @@
     <rect x="365" y="524" width="248" height="52" rx="8" fill="#fff7ed" stroke="#f59e0b"/>
     <text x="379" y="546" fill="#0f172a" font-size="12.5" font-weight="700">🔍 감사관</text>
     <text x="379" y="564" class="s">프로젝트별 감사 기준 적용</text>
-    <text x="365" y="600" class="lbl">백호 발동 시 44명+ 부대로 폭발</text>
+    <text x="365" y="600" class="lbl">필요 시 분대를 즉석 소환해 병렬 처리</text>
   </g>
   <g>
     <rect x="655" y="418" width="285" height="200" rx="10" fill="#eef2ff" stroke="#6366f1" class="box"/>

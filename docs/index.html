@@ -70,13 +70,12 @@
   <button data-t="t3">3 · 핵심 개념</button>
   <button data-t="t4">4 · 동작</button>
   <button data-t="t5">5 · 주요 기능</button>
-  <button data-t="t6">6 · 백호 대량전개</button>
   <div class="tab-break"></div>
-  <button data-t="t7">7 · 기술 구조</button>
-  <button data-t="t8">8 · 직접 만들기</button>
-  <button data-t="t9">9 · 한계</button>
-  <button data-t="t10">10 · Hermes Agent 비교</button>
-  <button data-t="t11">11 · 용어집</button>
+  <button data-t="t7">6 · 기술 구조</button>
+  <button data-t="t8">7 · 직접 만들기</button>
+  <button data-t="t9">8 · 한계</button>
+  <button data-t="t10">9 · Hermes Agent 비교</button>
+  <button data-t="t11">10 · 용어집</button>
 </nav>
 
 <main>
@@ -169,28 +168,7 @@
     </ul>
   </section>
 
-  <!-- 6 백호 -->
-  <section class="pane" id="t6">
-    <h2>★ 특별 기능 — 백호 소대 편제 (대규모 AI 동시 투입)</h2>
-    <p class="sub">워커 하나를 순식간에 수십 명의 AI 부대로 폭발시킨다</p>
-    <h3>핵심</h3>
-    <p>소대(워커)는 Claude Code 인스턴스 = 소대장. 여기서 <strong>백호(白虎) 소대 편제 스킬</strong>을 발동하면 그 소대장 하나가 즉시 <strong>44명 이상의 AI 부대</strong>로 확장된다 — 소대장 1 + N개 분대 + 용병 + 스킬 패키지.</p>
-    <h3>구성 (편제 공식)</h3>
-    <ul>
-      <li><strong>HQ(소대장 1) + N개 분대 × 13(분대장 1 + 정규병 12) + 용병 4</strong> + Skill Package(지속 확장)</li>
-      <li><strong>A형(기본, 3분대) = 44명</strong> · B형(5분대) = 70명 · C형(6분대~) = 그 이상 (예비병 분대당 3명 별도)</li>
-      <li>용병 4 = Codex·Gemini·Grok·Perplexity (외부 AI 공유 풀)</li>
-    </ul>
-    <h3>★★ 특수부대 DW(Dynamic Workflows) — 추가 편성</h3>
-    <p>기본 분대(A형 44명)는 그대로 두고, 그 위에 <strong>DW를 추가 편성</strong>하면 동원 규모가 다시 폭발한다(보병 옆의 포병).</p>
-    <ul><li><strong>DW 엔진 1기 = 동시 16 병렬 / 누적 최대 1,000 에이전트.</strong> DW 부대는 N개까지 편성 가능.</li></ul>
-    <div class="callout warn">⚠️ <strong>단위 주의</strong> — 1,000은 <em>동시</em>가 아니라 DW 1기의 <em>누적 처리</em> 상한. 동시 투입은 DW당 16씩(+백호 분대 수십). "천 명이 한꺼번에"가 아니라 "누적 천 단위를 처리"로 읽는 게 정확하다. DW는 Opus 4.8+ · Max/Team/Enterprise 플랜 한정, <strong>발동 전 PO 승인 필수.</strong></div>
-    <p>📜 백호 소대 편제는 <strong>특허출원</strong> — 출원번호 10-2026-0041235 (출원일 2026.03.07).</p>
-    <div class="callout">요약 — 시스템이 "여러 워커의 <strong>수평 확장</strong>"이라면, 백호는 "워커 한 명의 <strong>수직 폭발</strong>". 둘을 합치면 폰 한 줄로 지휘하는 대규모 AI 군단.</div>
-    <figure class="fig"><img src="diagrams/백호_관계도.svg" alt="백호 편제 관계도"><figcaption>📊 백호 편제 관계도</figcaption></figure>
-    <figure class="fig"><img src="diagrams/백호_흐름도.svg" alt="백호 작전 흐름도"><figcaption>📊 백호 작전 흐름도</figcaption></figure>
-  </section>
-
+  
   <!-- 7 Hermes -->
   <section class="pane" id="t10">
     <h2>비교 — Hermes Agent와 Pocket Command Supporting System</h2>
@@ -211,11 +189,12 @@
     </ul>
     <h3>Pocket Command Supporting System의 실제 차별점</h3>
     <ol>
-      <li><strong>Claude Code 네이티브 대량 폭발</strong> — 백호(완편 44) + DW(누적 최대 1,000)로 단일 명령을 군단급 전개. Claude 전용 메커니즘.</li>
-      <li><strong>감사관 견제 거버넌스</strong> — 자기 학습이 아니라 독립된 감사관이 커밋을 자동 감사 → 워커 자동 대응.</li>
+      <li><strong>벤더 교차 운용·교차 감사</strong> — Claude Code·Codex·Grok·Antigravity가 같은 큐에서 돌고, 한 벤더의 산출물을 다른 벤더의 에이전트가 읽기 전용으로 검수한다. 외부 CLI에는 자격증명을 넘기지 않고 쓰기 범위도 자기 폴더로 제한한다.</li>
+      <li><strong>감사관 견제 거버넌스</strong> — 자기 학습이 아니라 독립된 감사관이 커밋을 자동 감사하고, 판정이 <code>[조치필요]</code>일 때만 워커가 대응한다.</li>
+      <li><strong>감사 기록 무결성</strong> — 감사 원본을 작업자 저장소 밖에 두고 해시 체인으로 봉인한다. 해시 계산은 감사받는 AI가 아니라 별도 스크립트가 수행한다.</li>
       <li><strong>군대 편제 UX + 부대 관제 대시보드</strong> — 일관된 지휘 메타포 + 하트비트 EKG. (Hermes Agent Kanban이 작업 중심이라면 이쪽은 부대 생존·상태 중심.)</li>
     </ol>
-    <div class="callout">한 줄 — Hermes Agent는 "스스로 자라는 범용 에이전트 런타임", Pocket Command Supporting System은 "Claude Code 네이티브 + 군대식 거버넌스" 버전.</div>
+    <div class="callout">한 줄 — Hermes Agent는 "스스로 자라는 범용 에이전트 런타임", Pocket Command Supporting System은 "여러 벤더 AI를 폰에서 지휘하고 서로 감사시키는 거버넌스" 버전.</div>
     <p class="src">참고(공개 자료): NousResearch/hermes-agent 공식 docs(Subagent Delegation·Kanban·Profiles·Terminal backends) 및 Multi-Agent Architecture(issue #344). 위는 벤치마크 수치가 아니라 공개 문서 기반 설계 비교.</p>
   </section>
 
@@ -305,7 +284,9 @@
       <tr><td>감사관(Auditor)</td><td>특정 워커의 산출물을 자동 검수하는 전용 워커.</td></tr>
       <tr><td>하트비트</td><td>워커가 살아있음을 주기적으로 알리는 신호(대시보드 EKG).</td></tr>
       <tr><td>워커(Worker)</td><td>실제 작업을 실행하는 AI 데몬 프로세스.</td></tr>
-      <tr><td>백호 / DW</td><td>워커를 44명 부대로 확장하는 스킬 / 동시16·누적 최대 1,000으로 폭발시키는 특수부대.</td></tr>
+      <tr><td>파견 분대장</td><td>전용 작업폴더를 받아 실작업을 하는 다른 회사 AI 코딩 에이전트(Codex·Grok·Antigravity). 산출물은 자동 감사된다.</td></tr>
+      <tr><td>판정 게이트</td><td>감사 의견 첫 줄의 <code>[조치필요/조치불요]</code> 표식. 조치불요면 대응 워커를 돌리지 않는다.</td></tr>
+      <tr><td>vault(감사 원본)</td><td>작업자 저장소 밖에 있는 감사관 전용 보관소. 해시 체인으로 봉인된다.</td></tr>
       <tr><td>Pocket Command Post</td><td>이 시스템의 대시보드(관제 화면) 이름.</td></tr>
     </table>
   </section>
