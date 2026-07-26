@@ -1,6 +1,8 @@
 # Pocket Command Supporting System (PCSS)
 
-*주머니 속 AI 작업팀 지휘통제 지원 시스템 — PO가 여러 Claude Code 소대장 세션을 모바일에서 직접 관리하도록 돕는 콕핏, 상태 관제, Telegram 보고, Git 감사 루프.*
+*주머니 속 AI 작업팀 지휘통제 지원 시스템 — PO가 여러 AI 코딩 에이전트 세션(Anthropic Claude Code · OpenAI Codex · xAI Grok · Google Antigravity)을 모바일에서 직접 관리하도록 돕는 콕핏, 상태 관제, Telegram 보고, Git 감사 루프.*
+
+한 회사 AI에 묶이지 않습니다. 여러 벤더의 코딩 에이전트가 같은 작업 큐에서 동시에 일하고, 한 벤더의 산출물을 다른 벤더의 에이전트가 감사합니다.
 
 > **공식 영문명**: Pocket Command Supporting System
 > **공식 약칭**: PCSS
