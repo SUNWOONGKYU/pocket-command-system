@@ -43,6 +43,10 @@ PCSS는 지휘관, 참모장, 명령 배정자, 명령 전달자 또는 중앙 �
 | 상태 저장 | `supabase/schema.sql` | legacy `agents/tasks` + PCSS `hosts/platoons/platoon_runs/audits/events` |
 | 프로젝트 매핑 | `config/projects.json` | 공개 예시. 운영 데이터는 `config/projects.local.json` 또는 env 사용 |
 | 감사 적재 | `scripts/enqueue-audit.js` | Git post-commit -> 감사 task 적재 |
+| 감사 무결성 | `scripts/audit-integrity-check.js` | 감사 원본 SHA-256 프리픽스 체인 기록·검증 |
+| 감사 경로 규칙 | `scripts/audit-paths.cjs` | vault·`_audit` 경로 산출 단일 출처 |
+| 감사 판정 해석 | `scripts/audit-verdict.cjs` | 판정 규격(`[심각도] [조치필요/불요]`) 정의·해석 |
+| 대응 헤더 스캔 | `scripts/audit-response-scan.cjs` | 대응이력 헤더 파싱(코드펜스 인용 제외) 단일 출처 |
 
 `/`는 `/cockpit`로 리다이렉트됩니다.
 
@@ -126,11 +130,41 @@ PCSS는 PO가 선택하지 않은 소대에 임의 배정하지 않습니다. �
 
 1. 대상 repo에 `install-auditor.ps1`로 post-commit hook 설치.
 2. 커밋 발생 시 `scripts/enqueue-audit.js <projectKey>`가 감사 task를 Supabase에 적재.
-3. 감사관 worker가 읽기 전용 감사 의견을 만든다.
-4. daemon worker 커밋이면 원 worker에 `[감사 대응]` task를 적재한다.
-5. interactive Claude Code 세션 커밋이면 worker에 자동 배정하지 않고 Telegram/SessionStart 주입으로 사람이 확인한다.
+   비기능 커밋(`docs`/`chore`/`style`/`ci`)은 자동 스킵하되 의존성 변경은 항상 감사합니다.
+3. 감사관 worker가 읽기 전용 감사 의견을 만들고 아래 "기록 무결성" 절차로 봉인합니다.
+4. **판정 게이트** — 감사 의견 첫 줄 규격은 `[<정상|경미|주의|중대>] [<조치필요|조치불요>] — <요약>`입니다.
+   `[조치필요]`일 때만 원 worker에 `[감사 대응]` task를 적재합니다. `[조치불요]`면 기록만 남기고
+   worker 세션을 쓰지 않습니다. 심각도와 "고쳐야 하는가"는 다른 축이므로 게이트는 뒤쪽 표식만 봅니다.
+   표식이 없는 구 형식은 심각도로 폴백하고, 판정을 못 읽으면 조치 필요로 간주합니다(fail-safe).
+5. interactive Claude Code 세션 커밋이면 worker에 자동 배정하지 않고 Telegram/SessionStart 주입으로
+   사람이 확인합니다. 이때도 게이트가 적용돼 `[조치불요]`는 주입되지 않습니다.
 
 감사관은 지휘관이 아니며 소스코드를 직접 수정하지 않습니다.
+
+### 기록 무결성
+
+감사 원본은 **작업자 저장소 밖**에 둡니다. 작업자와 감사관이 같은 workdir를 공유하므로,
+"작업자는 원본에 쓰지 않는다"를 프롬프트 약속이 아니라 물리적 격리로 보장합니다.
+
+| 항목 | 위치 | 쓰는 주체 |
+|---|---|---|
+| 원본 감사이력 | `<repo의 부모>/_audit_vault/<repo 이름>/감사이력_원본.md` | 감사관만 |
+| 해시 체인 로그 | 같은 폴더의 `integrity.log` | `audit-integrity-check.js`만 |
+| 사본 감사이력 | `<repo>/_audit/감사이력.md` | 작업자가 읽음 |
+| 대응이력 | `<repo>/_audit/대응이력.md` | 작업자가 씀 |
+
+vault는 저장소 밖이라 gitignore와 무관하게 커밋 대상이 아닙니다. 해시 계산은 감사관 LLM이 아니라
+`scripts/audit-integrity-check.js`가 결정론적으로 수행합니다(감사관은 트리거만) — 값을 잘못 계산하거나
+지어낼 여지를 제거하기 위해서입니다. 각 로그 줄은 그 시점까지의 원본 프리픽스를 증언하므로,
+뒤에 append되는 것은 허용하되 과거 구간이 사후 변조되면 탐지됩니다.
+
+### 파견 분대장(외부 벤더 CLI) 산출물 감사
+
+codex/grok/antigravity 등 전용 2폴더(`<kind>-worktree`, `<kind>-artifacts`)를 가진 벤더 CLI는
+파견 분대장으로 취급해 작업 완료 시 산출물도 자동 감사합니다. 이들은 샌드박스 때문에 자기 작업폴더
+밖(프로젝트 `_audit`)에 쓸 수 없으므로, 감사 대응 기록은 worker에 권한을 열지 않고
+**러너가 대신 append**합니다. 좌표는 프롬프트 말미 마커에서 읽되 러너가 스스로 계산한 경로와
+대조해 일치할 때만 기록합니다(마커가 오염돼도 임의 경로에 쓰지 않음).
 
 ---
 
