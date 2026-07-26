@@ -61,6 +61,7 @@ const VAULT_DIR = path.resolve(argOf('--vault') || vaultDirFor(REPO_ROOT));
 const INTEGRITY_LOG = path.join(VAULT_DIR, 'integrity.log');
 const VAULT_FILE = path.join(VAULT_DIR, '감사이력_원본.md');
 
+// buf: Buffer 또는 string (crypto.Hash.update가 둘 다 수용 — UTF-8 string과 동등 Buffer는 동일 해시)
 function sha256(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
@@ -137,13 +138,16 @@ function verifyPrefix(parsed, fileBuf) {
 function runVerify() {
   if (!fs.existsSync(VAULT_FILE)) {
     console.log('[integrity] vault 원본 파일 없음(아직 감사 미기록) — 스킵:', VAULT_FILE);
-    process.exit(0);
+    return; // ★ process.exit(0) 대신 자연 종료 — Windows에서 stdout이 파이프(SessionStart 훅 등이 캡처)로
+    //   연결돼 있으면 파이프 쓰기가 비동기라 exit()이 flush 전에 프로세스를 끊어 이 진단 메시지가
+    //   조용히 사라질 수 있다(Node 문서에 명시된 알려진 함정). main()이 자연스럽게 끝나 이벤트 루프가
+    //   비면 exit code 0으로 종료되므로 동작은 동일하고, 메시지 유실 위험만 없앤다.
   }
 
   const lines = loadLogLines();
   if (lines.length === 0) {
     console.log('[integrity] vault 파일은 있는데 integrity.log가 비어있거나 없음 — 아직 첫 기록(--record) 전(과도기)일 수 있음. 위변조 아님, 검증 보류.');
-    process.exit(0);
+    return; // 위와 동일 이유로 process.exit(0) 대신 자연 종료.
   }
 
   const chain = verifyChain(lines);
@@ -169,7 +173,7 @@ function runVerify() {
 function runRecord() {
   if (!fs.existsSync(VAULT_FILE)) {
     console.log('[integrity] vault 원본 파일이 없어 기록할 것이 없음 — 스킵:', VAULT_FILE);
-    process.exit(0);
+    return; // process.exit(0) 대신 자연 종료(위 runVerify 주석 참고 — stdout 유실 방지).
   }
 
   const lines = loadLogLines();
@@ -217,4 +221,6 @@ function main() {
   else runVerify();
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { sha256, parseLine, verifyChain, verifyPrefix };

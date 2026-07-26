@@ -7,6 +7,9 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import Link from 'next/link';
 import { createBrowserClient } from '@/lib/supabase';
 import { Agent, Task, Attachment, Platoon, Host, EventLog, deriveStatus, STATUS_META, USAGE_STALE_SEC, LEADER_SEEN_STALE_SEC } from '@/lib/types';
+// 감사 판정 해석 단일 출처(SSOT) — worker/agent-runner.ts·scripts/session-audit-check.js와 같은 모듈.
+//   순수 JS(문자열 정규식만, fs/path 등 Node 전용 API 없음)라 클라이언트 번들에 안전하게 포함된다.
+import * as AUDIT_VERDICT from '../../scripts/audit-verdict.cjs';
 import s from './cockpit.module.css';
 
 type TeamMember = { name: string; role: string; model?: string };
@@ -96,10 +99,19 @@ const EKG_TRACE = 'M0 13 L34 13 L40 13 L44 4 L49 22 L54 13 L72 13 L78 13 L82 9 L
 const EKG_FLAT = 'M0 13 L240 13';
 
 // 감사관이 자동으로 낸 최근 판정을 텍스트에서 추출 (감사관 태스크의 결과/명령문 기준)
-// ★ PCSS 감사관의 top-line verdict는 '[정상]' 마커 — 이게 있으면 본문에 '권고/지적' 언급이 있어도 정상.
-//   그래서 [정상]을 먼저 판정하고, 없을 때만 문제 마커([필수]/[중대]/결함 등)로 지적 여부를 본다.
+// ★SSOT 정합(2026-07-27 검토 수정): 이 카드/배지는 오랫동안 독자 키워드 휴리스틱만 썼다 —
+//   worker/agent-runner.ts·scripts/session-audit-check.js는 PO 결정(2026-07-26)에 따라 게이트 기준을
+//   '심각도'에서 '조치 필요 여부'로 이미 바꿨는데(audit-verdict.cjs), 이 콕핏 화면만 옛 방식(정상/필수·
+//   주의·중대·치명 키워드)에 머물러 있었다. 그러면 '[경미] [조치필요]'처럼 심각도는 낮지만 실제로는
+//   대응 워커가 자동 배정되는 지적을, 옛 키워드 목록에 '경미'가 없어 카드·인박스가 '지적 없음'으로
+//   조용히 보여준다 — 정확히 PO 결정의 계기가 된 사례(2026-07-25 클램프 누락 버그가 [경미]였음)와
+//   같은 종류의 사각이 UI에 그대로 남아 있었다. 새 규격 텍스트는 SSOT로 판정하고, 마커가 없는
+//   구형식 텍스트만 기존 키워드 휴리스틱으로 폴백한다(과거 감사 이력 표시 호환 유지).
 function classifyAudit(text?: string | null): { label: string; warn: boolean } | null {
   if (!text) return null;
+  const sev = AUDIT_VERDICT.severityOf(text);
+  if (sev) return { label: sev, warn: AUDIT_VERDICT.needsAction(text) };
+  // 구형식(첫 줄에 [심각도] 마커가 없는 과거 감사문) 폴백 — 종전 키워드 휴리스틱 그대로 유지.
   if (/\[정상\]/.test(text)) return { label: '정상', warn: false };
   if (/\[(필수|주의|중대|치명|major|critical)\]|결함|위반|불합격|누락 발견|취약점|🔴|\bFail\b|\bDanger\b/i.test(text))
     return { label: '지적', warn: true };
@@ -152,6 +164,10 @@ export default function Cockpit() {
   const [events, setEvents] = useState<EventLog[]>([]); // 인박스 공용 — 최근 50건(RLS 공개 조회)
   // 충돌 경고 전용 — 위 공유 풀(limit 50)에 섞이면 빈도 높은 이벤트에 밀려 사라진다(PO 결정 2026-07-26).
   const [conflictEvents, setConflictEvents] = useState<EventLog[]>([]);
+  // 감사 대응 전용 — 이 카테고리도 공유 풀(limit 50)에만 의존하면 같은 결함이 재발한다: 감사 대응은
+  //   충돌 경고보다 오히려 발생 빈도가 높아(대응이 있을 때마다) 다른 이벤트에 밀려 50건 밖으로 잘려
+  //   나가기 더 쉽다. conflictEvents와 같은 처방 — 전용 쿼리로 분리한다(검토 지적, 2026-07-27).
+  const [auditResponseEvents, setAuditResponseEvents] = useState<EventLog[]>([]);
   const [inboxOpen, setInboxOpen] = useState(false); // 헤더 🔔 → 인박스 패널 펼침
   // 예외함 'failed 24h' 전용 쿼리 결과 — 일반 tasks(limit 120, updated_at desc)에 얹으면 24h 내 갱신량이
   //   120건을 넘을 때 오래된 failed 건이 배열 밖으로 밀려 조용히 누락된다(V① 반려 결함). 그래서 별도 쿼리로 분리.
@@ -228,7 +244,7 @@ export default function Cockpit() {
     const sb = createBrowserClient();
     if (!sb) { setLive(false); return; } // 콕핏은 라이브 전용 (데모 시드 없음) — 미설정 시 안내 배너로 알림
     const load = async () => {
-      const [{ data: a }, { data: tk }, { data: pl }, { data: h }, { data: ev }, { data: ft }, { data: cf }] = await Promise.all([
+      const [{ data: a }, { data: tk }, { data: pl }, { data: h }, { data: ev }, { data: ft }, { data: cf }, { data: ar }] = await Promise.all([
         sb.from('agents').select('*'),
         sb.from('tasks').select('*').order('updated_at', { ascending: false }).limit(120),
         sb.from('platoons').select('*'), // 미적용 DB(마이그레이션 전)면 data=null — 배지만 안 뜨고 나머지 무영향
@@ -244,6 +260,13 @@ export default function Cockpit() {
         //   예외함 'failed 24h'를 전용 쿼리로 분리한 것과 같은 처방(같은 계열 결함을 이미 한 번 겪었다).
         sb.from('events').select('*').eq('event_type', 'merge_conflict')
           .order('created_at', { ascending: false }).limit(200),
+        // 인박스 감사 대응 전용 — 위 events(limit 50, 전 타입 공유)와 별개로 직접 조회(검토 지적, 2026-07-27).
+        //   conflictEvents를 분리한 것과 똑같은 이유: 감사 대응은 충돌 경고보다도 발생 빈도가 높아
+        //   공유 풀(limit 50)을 더 쉽게 잠식하고, 그러면 이 카테고리 자신도(24h 윈도우로 걸러도) 오래된
+        //   항목이 새 이벤트에 밀려 조용히 빠진다 — 아래 24h 필터는 이 쿼리 결과에 대해서만 안전하다.
+        sb.from('events').select('*').eq('event_type', 'audit_response')
+          .gte('created_at', new Date(Date.now() - 86400000).toISOString())
+          .order('created_at', { ascending: false }).limit(200),
       ]);
       if (a) setAgents(a as Agent[]);
       if (tk) setTasks(tk as Task[]);
@@ -252,6 +275,7 @@ export default function Cockpit() {
       if (ev) setEvents(ev as EventLog[]);
       if (ft) setFailedTasks24h(ft as Task[]);
       if (cf) setConflictEvents(cf as EventLog[]);
+      if (ar) setAuditResponseEvents(ar as EventLog[]);
     };
     load();
     const poll = setInterval(load, 15000);
@@ -537,8 +561,16 @@ export default function Cockpit() {
   //     풀을 잠식해 merge_conflict(시간 제한 없는 실조치 항목)를 인박스 밖으로 밀어낸다.
   //     다른 카테고리와 같은 관행(failed 24h·audit_flag 24h)으로 맞춘다 — 새 상태·클릭 부담 없음.
   //     상세는 _audit/대응이력.md 에 영구 보존되므로 24h 경과분이 사라져도 기록 손실이 아니다.
-  const auditResponseItems: InboxItem[] = events
-    .filter((e) => e.event_type === 'audit_response' && new Date(e.created_at).getTime() >= Date.now() - DAY_MS)
+  //   ★소스는 전용 쿼리(auditResponseEvents) — conflictEvents와 같은 이유로 공유 풀(limit 50)에만
+  //     의존하면 안 된다(검토 지적, 2026-07-27): 이 카테고리 자체가 위에서 지목한 '풀을 잠식하는
+  //     빈도 높은 이벤트'라서, 정작 자신도 공유 풀에서 오래된 항목이 먼저 밀려난다. realtime 구독으로
+  //     들어온 신규분이 공유 풀에만 있을 수 있어 conflictItems와 같은 방식으로 합치고 id로 중복 제거한다.
+  const auditResponseSource: EventLog[] = [
+    ...auditResponseEvents,
+    ...events.filter((e) => e.event_type === 'audit_response' && !auditResponseEvents.some((a) => a.id === e.id)),
+  ];
+  const auditResponseItems: InboxItem[] = auditResponseSource
+    .filter((e) => new Date(e.created_at).getTime() >= Date.now() - DAY_MS)
     .map((e) => {
       // payload는 메타만 담는다(events가 anon 공개읽기 — 06afab9c ⓑ). 본문은 여기서 표시하지 않는다.
       const payload = (e.payload || {}) as { repo?: string; commit?: string; at?: string };

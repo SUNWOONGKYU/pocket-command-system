@@ -13,6 +13,13 @@ import * as os from 'node:os';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import ws from 'ws';
+// 파견 산출물 스캔 + 대응이력 대행 기록 — 순수 로직만 별도 모듈로 분리(CV Round3 Low-1, 회귀 테스트 목적).
+// 호출 방식은 기존과 동일하다. 단, recordDispatchResponse 의 중복 가드는 이 분리 과정에서 정규식
+// 이스케이프를 추가로 보강했다(CV Round4 Low-1 — commit 값을 이스케이프 없이 RegExp에 그대로 넣던
+// 부분을 고쳤다. 지금은 commit이 항상 't-'+16진수라 실질 위험은 없지만, RESPMETA 포맷이 바뀌어
+// 메타문자가 섞여 들어오면 조용히 과매치할 수 있어 선제 방어했다. 상세는 audit-scan.ts 참고).
+// 그 외 함수·호출부 동작은 변경이 없다.
+import { normalizeScanRoots, recentOutputFiles, recordDispatchResponse, SCAN_HIDDEN_ALLOW } from './audit-scan';
 
 // 감사 경로 규칙(vault·_audit)의 단일 출처 — 스크립트(CJS)와 공유해야 규칙이 갈라지지 않는다.
 // tsx 는 CJS 로 실행되므로 require 로 그대로 물어온다(전용 .d.ts 를 두지 않기 위해 형 선언을 명시).
@@ -23,12 +30,15 @@ const AUDIT_PATHS = require('../scripts/audit-paths.cjs') as {
 };
 // 대응이력 헤더 스캐너도 단일 출처 — Stop 훅·SessionStart 주입과 같은 규칙(코드펜스 인용 제외)을 써야
 // 인용 헤더가 '이미 대응함'으로 읽혀 정당한 대응 요청이 막히는 일이 없다.
-const RESP_SCAN = require('../scripts/audit-response-scan.cjs') as { respondedIds(text: string): Set<string> };
+const RESP_SCAN = require('../scripts/audit-response-scan.cjs') as {
+  respondedIds(text: string, onFallback?: () => void): Set<string>;
+};
 // 감사 판정 규격·해석도 단일 출처 — 프롬프트가 요구하는 형식과 게이트가 읽는 형식이 갈라지면
 // 조치가 필요한 지적이 조용히 묻힌다.
 const AUDIT_VERDICT = require('../scripts/audit-verdict.cjs') as {
   severityOf(text: string): string | null;
   needsAction(text: string): boolean;
+  needsActionDetail(text: string): { action: boolean; source: 'marker' | 'severity-fallback' | 'fail-safe' };
   VERDICT_INSTRUCTION: string;
 };
 
@@ -534,122 +544,14 @@ function dispatchRoot(workdir: string | null, kind: string): string | null {
   return null;
 }
 
-// 순회에서 건너뛸 디렉터리 — 빌드·의존성 산물은 산출물 힌트로서 가치가 없고 항목 수가 많다.
-//   (감사 af40516f ⓐ: 제외 목록이 숨김·_audit·_작업이력.md 뿐이라 node_modules 같은 대용량 폴더를
-//    그대로 완주했다. 워커는 단일 이벤트 루프라 그 동안 하트비트(5초 주기·30초 offline 임계)와
-//    stop 폴링(1.5초)이 함께 멈춰 offline 오판·중단 지연으로 이어진다.)
-const SCAN_SKIP_DIRS = new Set([
-  'node_modules', 'dist', 'build', 'out', 'target', 'vendor', '__pycache__', 'coverage', '.next',
-]);
-// 숨김 항목은 원칙적으로 제외하되(.git·.venv·샌드박스 부산물 등 잡음), '진짜 산출물일 수 있는' 몇 개는
-//   예외로 본다(PO 결정 2026-07-26). 전엔 점으로 시작하면 전부 빠져서 .github/workflows 같은 정상
-//   산출물이 힌트에서 사라졌다 — 감사관이 '변경 없음'으로 읽을 위험(검토 지적 ⑤).
-//   node_modules 잡음 차단은 그대로 유지되므로 20건 상한을 다시 먹는 부작용은 없다.
-const SCAN_HIDDEN_ALLOW = new Set(['.github', '.well-known', '.openai', '.vscode', '.claude', '.config']);
-// 방문 엔트리 예산 — 매칭이 20건에 못 미쳐도 이만큼 훑으면 중단한다. 제외 목록에 없는 대용량
-// 폴더가 새로 생겨도 순회 시간이 상한을 넘지 않게 하는 안전판(위 ⓐ 권고의 '방문 예산').
-const SCAN_VISIT_BUDGET = 5000;
-
-// 이번 태스크 실행 중 변경된 산출물 후보(mtime 기준) — 감사관에게 검토 대상 힌트로 전달.
-//   scanDirs: 실제로 훑을 폴더들(파견은 <root>/<kind>-worktree·<kind>-artifacts 둘 다).
-//   relBase : 반환 경로의 기준(감사 프롬프트가 안내하는 폴더와 같아야 감사관이 파일을 찾을 수 있다).
-// best-effort — 실패는 조용히 건너뛴다.
-// 스캔 루트 정규화 — 같은 폴더가 두 번 들어오거나 한쪽이 다른 쪽 하위면 같은 파일을 중복 집계하고
-//   출력 상한·방문 예산을 이중으로 태운다(검토 지적 ③). realpath 로 실경로를 맞춘 뒤 중복·중첩을 뺀다.
-function normalizeScanRoots(dirs: string[]): string[] {
-  const real: string[] = [];
-  for (const d of dirs) {
-    let p: string;
-    try { p = fs.realpathSync(path.resolve(d)); } catch { continue; } // 없는 폴더는 제외
-    try { if (!fs.statSync(p).isDirectory()) continue; } catch { continue; }
-    if (!real.includes(p)) real.push(p);
-  }
-  const under = (child: string, parent: string) => {
-    const rel = path.relative(parent, child);
-    return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
-  };
-  return real.filter((d) => !real.some((o) => o !== d && under(d, o)));
-}
-
-// 반환 경로는 relBase 기준 상대경로. 예산은 루트마다 따로 준다 — 한 루트가 크다고 뒤 루트가
-//   통째로 안 읽히면(검토 지적 ③) 정작 봐야 할 산출물을 놓친다.
-// 반환: { files, truncated } — truncated 는 상한/예산에 걸려 목록이 잘렸는지. 감사관에게 그대로 알린다
-//   (검토 지적 ⑤: 잘린 사실이 콘솔에만 남으면 감사관은 '변경 없음'으로 오해한다).
-function recentOutputFiles(scanDirs: string[], relBase: string, sinceMs: number): { files: string[]; truncated: boolean } {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  let truncated = false;
-  for (const root of normalizeScanRoots(scanDirs)) {
-    let visited = 0;
-    const walk = (dir: string, depth: number) => {
-      if (out.length >= 20 || visited >= SCAN_VISIT_BUDGET) { truncated = true; return; }
-      if (depth > 3) { truncated = true; return; }
-      let entries: fs.Dirent[] = [];
-      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-      for (const e of entries) {
-        if (out.length >= 20 || visited >= SCAN_VISIT_BUDGET) { truncated = true; return; }
-        visited++;
-        if (e.name === '_audit' || e.name === '_작업이력.md') continue;
-        // 숨김은 허용목록에 있는 폴더만 통과. 숨김 '파일'(.env 등)은 계속 제외 — 시크릿 위험 + 잡음.
-        if (e.name.startsWith('.') && !(e.isDirectory() && SCAN_HIDDEN_ALLOW.has(e.name))) continue;
-        if (e.isDirectory() && SCAN_SKIP_DIRS.has(e.name)) continue;
-        const p = path.join(dir, e.name);
-        if (e.isDirectory()) walk(p, depth + 1);
-        else {
-          try {
-            if (fs.statSync(p).mtimeMs < sinceMs) continue;
-            const rel = path.relative(relBase, p).replace(/\\/g, '/');
-            if (!seen.has(rel)) { seen.add(rel); out.push(rel); }
-          } catch { /* 파일 소멸 등 — 무시 */ }
-        }
-      }
-    };
-    walk(root, 0);
-  }
-  return { files: out, truncated };
-}
+// 스캔 상수·normalizeScanRoots·recentOutputFiles — 순수 로직이라 node --test 회귀 테스트가
+//   가능하도록 worker/audit-scan.ts 로 분리했다(CV Round3 Low-1). 여기서는 그 모듈을 import 해서
+//   기존과 동일하게 호출한다(런타임 동작 변경 없음 — 정의 위치만 이동).
 
 const VENDOR_LABEL: Record<string, string> = { codex: 'OpenAI Codex', grok: 'xAI Grok', antigravity: 'Google Antigravity' };
 
-// 파견 분대장의 감사 대응을 러너가 대신 대응이력.md에 기록한다.
-// 샌드박스 워커는 자기 작업폴더 밖(프로젝트 _audit)에 쓰지 못하고, 커맨드 텍스트로 쓰기 승인을 주는
-// 길은 parseMercScope의 인용-주입 방어('[감사 대응]' 접두어면 토큰 무시, 감사 de1c229a)에 막혀 있다.
-// 그 방어를 약화시키는 대신 결정론적 코드가 대신 쓴다 — CLI에 새 권한이 열리지 않는 유일한 경로다.
-// 좌표는 respPrompt 말미의 [[RESPMETA ...]] 마커에서 읽는다(권한이 아니라 데이터).
-// expectedAuditDir 는 러너가 스스로 계산한 대응이력 폴더다 — 마커 값은 이것과 일치할 때만 쓴다(아래 참고).
-function recordDispatchResponse(cmdText: string, output: string, expectedAuditDir: string) {
-  // 감사 의견 전문이 프롬프트에 인용되므로 의견 안에 이 마커가 '언급'돼 있을 수 있다(t-5c4b5515 실측:
-  // 감사관이 '[[RESPMETA …]]'라고 축약 인용 → 첫 매치가 빈 값이라 조용히 기록이 누락됐다).
-  // 러너가 붙이는 진짜 마커는 항상 맨 끝이므로 마지막 매치를 쓴다.
-  const m = [...cmdText.matchAll(/\[\[RESPMETA ([^\]]+)\]\]/g)].pop();
-  if (!m) return;
-  const meta: Record<string, string> = {};
-  for (const kv of m[1].split('|')) { const i = kv.indexOf('='); if (i > 0) meta[kv.slice(0, i).trim()] = kv.slice(i + 1).trim(); }
-  const { auditDir, commit, worker } = meta;
-  // typeof 검사를 먼저 — undefined 를 정규식에 넣으면 문자열 'undefined'로 강제변환돼 통과해버린다.
-  if (typeof auditDir !== 'string' || typeof commit !== 'string' || !/^[\w.-]+$/.test(commit)) return;
-  // 파견 산출물 감사(식별자 t- 접두)에서만 대행 기록한다(감사 c7af735d 권고 ⓑ).
-  //   커밋 감사 대응 프롬프트에는 러너가 붙이는 진짜 마커가 아예 없다(respMeta 빈 문자열). 그때 감사
-  //   의견 본문에 완전형 마커가 인용돼 있으면 그것이 유일·마지막 매치가 되어 진짜 좌표로 오인된다.
-  if (!commit.startsWith('t-')) return;
-  // 좌표를 값 그대로 신뢰하지 않는다(감사 c7af735d 권고 ⓐ). 러너가 스스로 계산한 경로와 일치할 때만
-  //   쓴다 — 마커가 오염돼 임의 절대경로를 지목해도 러너(샌드박스 밖 node)가 거기에 쓰지 않는다.
-  //   enqueueDispatchAudit 이 auditDir 을 <dispatchRoot>/_audit 로 만들므로 호출부가 같은 값을 넘긴다.
-  if (path.resolve(auditDir) !== path.resolve(expectedAuditDir)) {
-    console.error(`[${NAME}] 대응이력 기록 거부 — 마커 좌표(${auditDir})가 러너 계산 경로(${expectedAuditDir})와 불일치`);
-    return;
-  }
-  const file = path.join(auditDir, '대응이력.md');
-  try {
-    // 중복 가드 — 같은 식별자의 대응 헤더가 이미 있으면 다시 쓰지 않는다(감사→대응 재적재 가드와 동일 규약).
-    if (fs.existsSync(file) && new RegExp('^## 커밋 ' + commit + ' 대응', 'm').test(fs.readFileSync(file, 'utf8'))) return;
-    fs.mkdirSync(auditDir, { recursive: true });
-    const ts = new Date().toLocaleString('sv-SE').slice(0, 16); // 로컬 'YYYY-MM-DD HH:MM'
-    const who = worker || NAME || '';
-    fs.appendFileSync(file, `\n## 커밋 ${commit} 대응 — ${ts} (${who}) [actor:daemon:${who}]\n${output.trim()}\n`);
-    console.log(`[${NAME}] 대응이력 기록(러너 대행) — ${commit}`);
-  } catch (e) { console.error(`[${NAME}] 대응이력 기록 실패(본류 무영향, 무시)`, e); }
-}
+// recordDispatchResponse — 순수 로직이라 worker/audit-scan.ts 로 분리했다(CV Round3 Low-1).
+//   selfName 인자로 NAME 을 넘겨받아 기존과 동일한 로그·기본 대응자 표기를 유지한다.
 
 // 감사관은 프로젝트당 한 명이다 — 벤더별로 감사관을 따로 두지 않는다. 파견 분대장의 산출물도
 // 그 프로젝트의 기존 감사관이 감사하고, 기록도 프로젝트 _audit 한 곳에 모인다(커밋 감사와 동일 폴더).
@@ -1241,7 +1143,11 @@ async function pickAndRun(self: Agent) {
     // 샌드박스 워커가 프로젝트 _audit에 직접 못 쓰기 때문(t-b47c6cad 실측: Access denied).
     // dRoot 가 없으면 파견 분대장이 아니다 — 대행 기록 자체를 하지 않는다(좌표 대조 기준도 없다).
     if (r.ok && !current.killed && task.command_text.trimStart().startsWith('[감사 대응]')) {
-      if (dRoot) recordDispatchResponse(task.command_text, r.output, AUDIT_PATHS.auditDirFor(dRoot));
+      // NAME! — 파일 상단에서 NAME 이 falsy 면 즉시 process.exit(1) 로 프로세스가 끝난다(NAME 선언·가드
+      //   참조). 폴링 등록(setInterval → pickAndRun)은 그 가드보다 뒤에 실행되므로, 이 지점에 도달했다는
+      //   것 자체가 NAME 이 항상 문자열임을 보장한다. TS 가 클로저 경계를 넘어 narrowing 을 유지하지
+      //   못해 타입 레벨에서만 string|undefined 로 보일 뿐이다.
+      if (dRoot) recordDispatchResponse(task.command_text, r.output, AUDIT_PATHS.auditDirFor(dRoot), NAME!);
       // 감사 시점엔 있던 파견 폴더 쌍이 지금은 없는 경우 — 조용히 생략하면 대응 누락 원인 추적이 어렵다
       // (감사 cba5d537 관찰). 위험 방향은 아니지만 사유를 한 줄 남긴다.
       else if (VENDOR_CLI_KINDS.has(self.kind)) console.log(`[${NAME}] 대응이력 대행 생략 — 파견 폴더 쌍(${self.kind}-worktree·${self.kind}-artifacts) 미탐지로 기준 경로 없음`);
@@ -1257,9 +1163,18 @@ async function pickAndRun(self: Agent) {
       //   "수용, 조치 불요"를 받아냈다. 커밋이 연쇄한 날 그 낭비가 배수로 났다.
       //   ★게이트 기준은 심각도가 아니라 '조치 필요 여부'다(PO 결정 2026-07-26) — 심각도와 고쳐야
       //   하는지는 다른 축이고, 실제로 [경미] 안에 진짜 결함이 섞였다. 해석은 audit-verdict.cjs 단일 출처.
-      if (meta && !AUDIT_VERDICT.needsAction(r.output)) {
-        console.log(`[${NAME}] 조치불요(심각도 ${AUDIT_VERDICT.severityOf(r.output) || '불명'}) — 대응 생략, 감사 기록만 남기고 종료(${meta.commit || ''})`);
-        return;
+      if (meta) {
+        // ★source가 'marker'가 아니면 감사관이 신규 규격([조치필요]/[조치불요])을 안 지킨 비규격
+        //   출력이라는 뜻이다 — 조용히 넘어가면 재발을 못 알아채므로 반드시 로그를 남긴다
+        //   (외부 검증 지적 High-2, 2026-07-27).
+        const verdict = AUDIT_VERDICT.needsActionDetail(r.output);
+        if (verdict.source !== 'marker') {
+          console.warn(`[${NAME}] 판정 마커([조치필요]/[조치불요]) 없이 ${verdict.source === 'fail-safe' ? '판정불명 fail-safe' : '심각도 폴백'}으로 게이트 판정(${verdict.action ? '조치필요' : '조치불요'}) — 감사관 출력이 신규 규격을 안 지켰다(${meta.commit || ''}).`);
+        }
+        if (!verdict.action) {
+          console.log(`[${NAME}] 조치불요(심각도 ${AUDIT_VERDICT.severityOf(r.output) || '불명'}) — 대응 생략, 감사 기록만 남기고 종료(${meta.commit || ''})`);
+          return;
+        }
       }
       if (meta) {
         // actor=interactive(대화형 Claude Code 세션이 만든 커밋)면, 그 일을 안 한 유휴 워커에게
@@ -1279,7 +1194,11 @@ async function pickAndRun(self: Agent) {
           if (meta.commit) {
             try {
               const resp = fs.readFileSync(`${meta.auditDir}/대응이력.md`, 'utf8');
-              if (RESP_SCAN.respondedIds(resp).has(meta.commit)) {
+              // respondedIds는 펜스 미닫힘일 때 폴백하지 않는다(외부 검증 지적 High-1) — 그 사실을
+              // 이 재적재 가드 맥락에서 식별 가능하게 로그로 남긴다(콜백을 명시 전달).
+              if (RESP_SCAN.respondedIds(resp, () => {
+                console.error(`[${NAME}] 커밋 ${meta.commit} — 대응이력.md 의 코드펜스가 닫히지 않았다(재적재 가드). 폴백 없이 펜스 인식 결과로 판정한다 — 파일의 펜스 균형을 점검하라.`);
+              }).has(meta.commit)) {
                 console.log(`[${NAME}] 커밋 ${meta.commit} — 대응이력에 응답 존재, 대응 작업 재적재 생략`);
                 return;
               }

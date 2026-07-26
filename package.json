@@ -8,7 +8,8 @@
     "start": "next start",
     "worker": "tsx worker/agent-runner.ts",
     "set-webhook": "tsx scripts/set-webhook.ts",
-    "audit:verify": "node scripts/audit-integrity-check.js"
+    "audit:verify": "node scripts/audit-integrity-check.js",
+    "test": "node --import tsx --test scripts/__tests__ worker/__tests__/audit-scan.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

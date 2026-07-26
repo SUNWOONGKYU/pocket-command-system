@@ -92,6 +92,50 @@ async function notifyLeaderResponse(repoName, headerLine, bodyLine) {
 //   (session-audit-check.js)과 같은 규칙(코드펜스 인용 제외)이어야 한 쪽만 인용 헤더를 세는 어긋남이 없다.
 const RESP_SCAN = require('./audit-response-scan.cjs');
 
+// ── 순수 로직 3종 — node --test 회귀 테스트 대상(CV Round3 Low-2) ──────────────
+//   워터마크 상태 전환·구버전 상태 호환·스탬프 적용은 fs/네트워크 I/O 가 없는 순수 로직이라 여기
+//   떼어내 테스트한다. require() 시 자동 실행되지 않게 하려고 main()은 require.main===module 일
+//   때만 호출한다(파일 하단 참고) — 그래야 테스트가 이 파일을 require 해도 stdin 읽기·process.exit(0)
+//   같은 실제 훅 부작용이 발동하지 않는다.
+
+// 대응이력.md 가 마지막 처리 이후 안 바뀌었는지 — 바뀌지 않았으면 재파싱 없이 즉시 종료해야 한다.
+function isUnchanged(state, mtimeMs) {
+  return !!(state && state.mtimeMs === mtimeMs);
+}
+
+// 상태 파일이 없거나(첫 실행) 구버전(stampedThroughLine 없음)이면 워터마크를 지금 줄 수로 베이스라인
+// 삼아야 한다 — 그 아래(기존 이력)는 주체 불명으로 남기고, 그 위(이후 대응)만 정확히 표식한다.
+function needsBaseline(state) {
+  return !state || typeof state.stampedThroughLine !== 'number';
+}
+
+// 워터마크 위(이번에 새로 append된 구간)의 헤더에만 액터 마커를 붙인다. 이미 멱등적으로 마킹된 줄,
+// 워터마크 아래(과거분)는 건드리지 않는다. 원본 lines 배열은 변형하지 않고 복사본에 적용한다.
+//   반환: { lines: 스탬프 적용된 새 배열, changed: 하나라도 바뀌었는지, newLeaderResponses: leader
+//   (대화형) 대응만 모은 통지 대상 목록 — header 는 스탬프 붙이기 '전' 원본 헤더 텍스트다(기존 동작).
+function computeStamp(lines, headerIdx, stampedThroughLine, actor) {
+  const isLeader = !actor;
+  const stamp = actor ? `[actor:daemon:${actor}]` : '[actor:leader]';
+  const outLines = lines.slice();
+  let changed = false;
+  const newLeaderResponses = [];
+  for (const li of headerIdx) {
+    if (li < stampedThroughLine) continue;
+    let line = outLines[li];
+    if (line.includes('[actor:')) continue; // 멱등 — 이미 표식된 줄은 건드리지 않음
+    const cr = line.endsWith('\r') ? '\r' : '';
+    if (cr) line = line.slice(0, -1);
+    outLines[li] = line + ' ' + stamp + cr;
+    changed = true;
+    if (isLeader) {
+      let body = '';
+      for (let j = li + 1; j < outLines.length && j < li + 6; j++) { const s = outLines[j].replace(/\r$/, '').trim(); if (s) { body = s; break; } }
+      newLeaderResponses.push({ header: line.replace(/\r$/, ''), body });
+    }
+  }
+  return { lines: outLines, changed, newLeaderResponses };
+}
+
 function findAuditDir(startCwd) {
   // cwd에서 위로 걸어 올라가며 _audit/대응이력.md를 가진 repo 루트를 찾는다(최대 12단계).
   let dir = path.resolve(startCwd || process.cwd());
@@ -105,7 +149,7 @@ function findAuditDir(startCwd) {
   return null;
 }
 
-(async () => {
+async function main() {
 try {
   let input = {};
   try { input = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, '')); } catch { /* stdin 없이 수동 실행 등 */ }
@@ -121,7 +165,7 @@ try {
   try { state = JSON.parse(fs.readFileSync(statePath, 'utf8')); } catch { /* 첫 실행 */ }
 
   // 파일이 우리가 마지막으로 처리한 뒤로 안 바뀌었으면 대용량 파일 재파싱 없이 즉시 종료.
-  if (state && state.mtimeMs === mtimeMs) return;
+  if (isUnchanged(state, mtimeMs)) return;
 
   const text = fs.readFileSync(respFile, 'utf8');
   const lines = text.split('\n'); // CRLF는 각 줄 끝 '\r'로 보존됨 — join('\n')으로 원본 EOL 그대로 복원.
@@ -146,35 +190,15 @@ try {
   //   (구 상태 파일은 stampedThrough 만 갖는다 → 워터마크가 없으면 지금 줄 수를 baseline 으로 삼는다.
   //    한 번은 그 시점 이전 미처리분을 건너뛰지만, 과거분을 잘못된 주체로 표식하는 것보다 안전하다.)
   const totalLines = lines.length;
-  if (!state || typeof state.stampedThroughLine !== 'number') {
+  if (needsBaseline(state)) {
     fs.writeFileSync(statePath, JSON.stringify({ stampedThroughLine: totalLines, mtimeMs }));
     return;
   }
 
   const actor = (process.env.PCSS_ACTOR || '').trim();
-  const isLeader = !actor; // PCSS_ACTOR 없음 = 대화형(leader) 세션
-  const stamp = actor ? `[actor:daemon:${actor}]` : '[actor:leader]';
+  const { lines: stampedLines, changed, newLeaderResponses } = computeStamp(lines, headerIdx, state.stampedThroughLine, actor);
 
-  let changed = false;
-  const newLeaderResponses = []; // 이번 턴 새로 생긴 leader 대응 → DB events + 텔레그램 대상
-  // 워터마크 위(=이번에 새로 append된 구간)의 헤더만 대상. 그 아래는 과거분이라 건드리지 않는다.
-  for (const li of headerIdx) {
-    if (li < state.stampedThroughLine) continue;
-    let line = lines[li];
-    if (line.includes('[actor:')) continue; // 멱등 — 이미 표식된 줄은 건드리지 않음
-    const cr = line.endsWith('\r') ? '\r' : '';
-    if (cr) line = line.slice(0, -1);
-    lines[li] = line + ' ' + stamp + cr;
-    changed = true;
-    // leader(대화형) 대응만 통지 — 데몬 대응은 이미 DB 태스크로 콕핏·텔레그램에 뜬다.
-    if (isLeader) {
-      let body = '';
-      for (let j = li + 1; j < lines.length && j < li + 6; j++) { const s = lines[j].replace(/\r$/, '').trim(); if (s) { body = s; break; } }
-      newLeaderResponses.push({ header: line.replace(/\r$/, ''), body });
-    }
-  }
-
-  if (changed) fs.writeFileSync(respFile, lines.join('\n'));
+  if (changed) fs.writeFileSync(respFile, stampedLines.join('\n'));
   // 쓰기 뒤 최신 mtime을 저장해야 다음 턴 bail-check가 맞는다.
   const newMtime = fs.statSync(respFile).mtimeMs;
   fs.writeFileSync(statePath, JSON.stringify({ stampedThroughLine: totalLines, mtimeMs: newMtime }));
@@ -190,4 +214,13 @@ try {
   // 스탬프/통지 실패는 조용히 무시 — 턴 종료 방해 금지
 }
 process.exit(0);
-})();
+}
+
+// require.main===module 가드 — 직접 실행(node scripts/response-actor-stamp.js, Stop 훅)될 때만
+//   자동 발화한다. 테스트가 이 파일을 require() 할 때는 main()이 돌지 않아 stdin 동기 읽기·
+//   process.exit(0) 같은 부작용이 테스트 프로세스를 건드리지 않는다. 직접 실행 시 동작은 이전과 동일.
+if (require.main === module) {
+  main();
+}
+
+module.exports = { isUnchanged, needsBaseline, computeStamp, findAuditDir, main };

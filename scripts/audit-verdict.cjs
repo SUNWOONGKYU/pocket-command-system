@@ -10,32 +10,51 @@
 //   예) `[경미] [조치필요] — 스캔 예산이 없어 하트비트가 멎을 수 있다.`
 //       `[주의] [조치불요] — 위험하지만 이번 커밋 책임이 아니고 별건으로 추적 중.`
 
-const SEVERITY_RE = /^\s*\[(정상|경미|주의|중대)\]/m;
-const ACTION_RE = /^\s*\[(?:정상|경미|주의|중대)\]\s*\[(조치필요|조치불요)\]/m;
+// ★앵커는 "문서 전체의 시작"이지 "아무 줄의 시작"이 아니다 — /m 플래그를 쓰면 ^ 가 모든 줄머리에
+//   걸려, 진짜 판정보다 앞서 '이전 감사 인용'이 자기 줄을 차지하고 있을 때(예: 감사 의견이
+//   "이전 감사 인용:\n[정상] 이었으나...\n[중대] [조치필요] — 진짜 지적" 처럼 인용문을 별도 줄로 적는
+//   경우) 그 인용 줄이 먼저 매치돼 이번 판정으로 오독된다 — 감사 9a536a04 ⓐ가 막으려던 "본문 중
+//   인용값 오독"과 같은 뿌리의 문제가 /m 때문에 절반만 막혀 있었다(줄 중간 인용은 막혔지만, 인용이
+//   자기 줄 전체를 차지하면 여전히 뚫린다). \s*(공백·개행·BOM 포함)만 선두에 허용하고 그 뒤 첫
+//   토큰이 바로 심각도 대괄호여야 매치하게 해 "문서의 진짜 첫 줄"만 본다.
+const SEVERITY_RE = /^\s*\[(정상|경미|주의|중대)\]/;
+const ACTION_RE = /^\s*\[(?:정상|경미|주의|중대)\]\s*\[(조치필요|조치불요)\]/;
 
 function severityOf(text) {
-  // 줄머리에서만 읽는다 — 감사 의견은 앞선 커밋 판정을 본문에서 인용하는 일이 잦아,
-  //   출력 전체의 첫 대괄호를 집으면 인용된 값을 이번 판정으로 오독한다(감사 9a536a04 ⓐ).
+  // 문서 맨 앞(선행 공백만 허용)에서만 읽는다 — 위 앵커 설명 참고.
   return (String(text).match(SEVERITY_RE) || [])[1] || null;
 }
 
-// 조치가 필요한가? true/false.
-//   ① 명시 표식이 있으면 그대로 따른다.
-//   ② 없으면(구 형식 감사, 감사관이 규격을 안 지킨 경우) 심각도로 폴백 — [주의]/[중대]는 필요.
-//   ③ 심각도도 못 읽으면 필요로 본다(fail-safe — 놓치는 것보다 한 번 더 보는 게 낫다).
-function needsAction(text) {
+// 조치가 필요한가? — 판정 근거(source)까지 함께 돌려주는 상세판.
+//   ① 명시 표식이 있으면 그대로 따른다 → source: 'marker'.
+//   ② 없으면(구 형식 감사, 감사관이 규격을 안 지킨 경우) 심각도로 폴백 — [주의]/[중대]는 필요
+//      → source: 'severity-fallback'.
+//   ③ 심각도도 못 읽으면 필요로 본다(fail-safe — 놓치는 것보다 한 번 더 보는 게 낫다)
+//      → source: 'fail-safe'.
+//   ★외부 검증 지적 High-2(2026-07-27): ②·③ 경로(marker 아닌 경로)는 감사관이 새 규격([조치필요]/
+//   [조치불요])을 안 지킨 비규격 출력이라는 뜻이다. 폴백이 발동했다는 사실이 조용히 묻히면 안 되므로
+//   source를 노출해 호출부가 로그를 남기게 한다. 기존 3분기 판정(구형식 [경미]=조치불요, [주의]=
+//   조치필요, 판정불명=조치필요)은 그대로 유지 — 호환이 목적이라 단순 반전은 하지 않는다.
+function needsActionDetail(text) {
   const explicit = (String(text).match(ACTION_RE) || [])[1];
-  if (explicit) return explicit === '조치필요';
+  if (explicit) return { action: explicit === '조치필요', source: 'marker' };
   const sev = severityOf(text);
-  if (!sev) return true;
-  return sev === '주의' || sev === '중대';
+  if (!sev) return { action: true, source: 'fail-safe' };
+  return { action: sev === '주의' || sev === '중대', source: 'severity-fallback' };
+}
+
+// 기존 API 호환 — boolean만 필요한 호출부는 그대로 쓴다.
+function needsAction(text) {
+  return needsActionDetail(text).action;
 }
 
 // 감사 의견 첫 줄에 넣으라고 감사관에게 주는 지시문 — 세 프롬프트가 같은 문구를 쓰게 한다.
 const VERDICT_INSTRUCTION =
   '- 감사 의견 첫 줄은 반드시 이 형식으로 시작하라: `[<정상|경미|주의|중대>] [<조치필요|조치불요>] — <한 줄 요약>`\n' +
+  '  · 위 백틱(`)은 형식을 보여주려고 감싼 것일 뿐이다. 실제 의견에는 백틱을 쓰지 말고, 첫 글자가 바로 대괄호 `[` 여야 한다.\n' +
+  '    (예: 실제로 쓸 첫 줄 → [경미] [조치필요] — 스캔 예산이 없어 하트비트가 멎을 수 있다.)\n' +
   '  · 심각도와 조치 필요 여부는 별개다. 사소해 보여도 고쳐야 하면 [조치필요], 심각해 보여도 이번 건에서 고칠 것이 없으면 [조치불요]다.\n' +
   '  · [조치필요]는 "지금 이 작업자가 코드/산출물을 고쳐야 한다"는 뜻이다. 관찰·참고·다음에 볼 것은 [조치불요]로 하고 본문에 적어라.\n' +
   '  · [조치필요]로 적으면 작업자에게 대응 작업이 자동 배정된다. 남발하지 말고, 반대로 진짜 결함을 [조치불요]로 묻지도 마라.';
 
-module.exports = { severityOf, needsAction, VERDICT_INSTRUCTION, SEVERITY_RE, ACTION_RE };
+module.exports = { severityOf, needsAction, needsActionDetail, VERDICT_INSTRUCTION, SEVERITY_RE, ACTION_RE };
