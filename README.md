@@ -7,6 +7,11 @@
 > **공식 한글명**: 주머니 속 AI 작업팀 지휘통제 지원 시스템
 > **대시보드 이름**: Pocket Command Post
 
+> **저장소 주소 안내** — 이 저장소의 URL은 `pocket-command-system` 그대로입니다.
+> 이름을 `Pocket Command Supporting System`으로 확정하기 전에 만들어진 주소이며,
+> 이미 배포·클론된 링크와 remote 주소가 깨지지 않도록 **의도적으로 바꾸지 않았습니다**.
+> 시스템의 공식 명칭은 위와 같고, 저장소 주소만 초기 이름을 유지합니다.
+
 PCSS는 지휘관, 참모장, 명령 배정자, 명령 전달자 또는 중앙 오케스트레이터가 아닙니다. 유일한 최상위 지휘권자는 PO이며, PO가 콕핏에서 해당 Claude Code 세션의 소대장을 직접 선택해 명령합니다. PCSS는 세션 접속, 상태 수집·압축, 작업·커밋·감사 상태 표시, 예외 경고, 승인·통제 수단, 기록과 추적을 지원합니다.
 
 현재 공개 코드의 운영 호환 계층은 기존 `agents`/`tasks` 테이블과 legacy worker 프로세스를 유지합니다. PCSS v3.1부터는 `hosts`/`platoons`/`platoon_runs`/`audits`/`events`를 추가해 “Claude Code 세션 하나 = 소대 하나” 모델로 확장합니다.
