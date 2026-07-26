@@ -24,7 +24,12 @@ export async function GET() {
     const envRaw = process.env.PCSS_PROJECTS_JSON;
     let json: any;
     if (envRaw && envRaw.trim()) {
-      json = JSON.parse(envRaw);
+      // BOM·앞뒤 공백을 걷어내고 파싱한다. env 값을 CLI로 주입할 때 셸(특히 PowerShell 파이프)이
+      //   UTF-8 BOM(﻿)과 CRLF를 붙이는 일이 있는데, 그대로 JSON.parse 하면 "Unexpected
+      //   non-whitespace character" 로 터지고 이 라우트가 500을 낸다 → 콕핏이 프로젝트를 하나도
+      //   못 그리고 전 워커가 '미분류 legacy'로 쏟아진다(실측 2026-07-27, 원인 파악에 시간 소요).
+      //   값이 깨졌을 때 조용히 빈 목록이 되는 것보다, 눈에 띄게 실패하되 흔한 오염은 흡수하는 편이 낫다.
+      json = JSON.parse(envRaw.replace(/^﻿/, '').trim());
     } else {
       const raw = fs.existsSync(localPath)
         ? fs.readFileSync(localPath, 'utf8')
